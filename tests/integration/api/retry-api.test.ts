@@ -33,11 +33,11 @@ describe('manual retry against PostgreSQL', () => {
   const allKey = (t: TenantSetup) => t.keys.all ?? '';
 
   /** Creates a notification and forces its delivery into `status` with the given attempts. */
-  async function notificationIn(status: string, outcomes: Outcome[]): Promise<string> {
+  async function notificationIn(status: string, outcomes: Outcome[]): Promise<number> {
     const res = await createRequest(h.app, allKey(tenant), `n-${randomUUID()}`);
-    const id = res.json<{ id: string }>().id;
+    const id = res.json<{ id: number }>().id;
     const rows = await queryRows(orm, `select id from deliveries where notification_id = ?`, [id]);
-    const deliveryId = String(rows[0]?.id);
+    const deliveryId = Number(rows[0]?.id);
     for (const [index, outcome] of outcomes.entries()) {
       await queryRows(
         orm,
@@ -67,7 +67,7 @@ describe('manual retry against PostgreSQL', () => {
     return id;
   }
 
-  function retry(id: string, idempotencyKey: string, key = allKey(tenant)) {
+  function retry(id: number, idempotencyKey: string, key = allKey(tenant)) {
     return h.app.inject({
       method: 'POST',
       url: `/v1/notifications/${id}/retry`,
@@ -100,7 +100,7 @@ describe('manual retry against PostgreSQL', () => {
       orm,
       `select actor, details from audit_events
        where tenant_id = ? and operation = 'notification.manual_retry' and resource_id = ?`,
-      [tenant.tenantId, id],
+      [tenant.tenantId, String(id)],
     );
     expect(audit).toHaveLength(1);
     expect(String(audit[0]?.actor)).toMatch(/^api_key:/);
@@ -165,7 +165,7 @@ describe('manual retry against PostgreSQL', () => {
     const audit = await queryRows(
       orm,
       `select count(*)::int as count from audit_events where operation = 'notification.manual_retry' and resource_id = ?`,
-      [id],
+      [String(id)],
     );
     expect(audit[0]?.count).toBe(1);
   });

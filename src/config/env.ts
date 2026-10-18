@@ -61,6 +61,8 @@ const EnvSchema = Type.Object({
   HTTP_HANDLER_TIMEOUT_MS: Ms(SECOND, 10 * MINUTE),
   /** Fastify `trustProxy`: set behind an ingress so per-IP limits see the client address. */
   HTTP_TRUST_PROXY: Type.Optional(Type.String({ pattern: TRUST_PROXY_PATTERN, maxLength: 1024 })),
+  /** Swagger UI on /v1/docs. Unset: enabled in local/test, disabled in stage/production. */
+  API_DOCS_ENABLED: Type.Optional(Type.Boolean()),
 
   // ------------------------------------------------------------------ API ingress
   /** Requests per tenant per window (POST notifications and manual retries). */

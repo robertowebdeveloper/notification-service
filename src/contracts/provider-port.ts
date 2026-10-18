@@ -14,8 +14,8 @@ export interface ProviderCapabilities {
 export type SecretValues = ReadonlyMap<string, string>;
 
 export interface ResolvedProviderInstance<TConfig = unknown> {
-  id: string;
-  tenantId: string;
+  id: number;
+  tenantId: number;
   providerType: string;
   revision: number;
   config: TConfig;
@@ -23,8 +23,13 @@ export interface ResolvedProviderInstance<TConfig = unknown> {
 }
 
 export interface SendContext<TConfig = unknown> {
-  deliveryId: string;
-  attemptId: string;
+  deliveryId: number;
+  /**
+   * Creation time of the notification. Ids are sequential, so they repeat after a database reset
+   * and across environments: together with `deliveryId` this identifies the delivery globally.
+   */
+  createdAt: Date;
+  attemptId: number;
   instance: ResolvedProviderInstance<TConfig>;
   /** Stable key derived from the persisted operation; reused on safe replays. */
   idempotencyKey: string;

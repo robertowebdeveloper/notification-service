@@ -72,10 +72,12 @@ export const SMTP_CAPABILITIES: ProviderCapabilities = Object.freeze({
   statusQuery: false,
 });
 
-/** Stable Message-ID for every attempt of the same delivery (correlation only, not dedup). */
-export function smtpMessageId(deliveryId: string, domain: string): string {
-  const local = deliveryId.replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 128);
-  return `<delivery.${local}@${domain}>`;
+/**
+ * Stable Message-ID for every attempt of the same delivery (correlation only, not dedup). The
+ * creation time keeps it unique when sequential ids repeat (database reset, other environment).
+ */
+export function smtpMessageId(deliveryId: number, createdAt: Date, domain: string): string {
+  return `<delivery.${deliveryId}.${createdAt.getTime().toString(36)}@${domain}>`;
 }
 
 function isAborted(signal: AbortSignal): boolean {
@@ -102,7 +104,7 @@ export class SmtpEmailAdapter implements ProviderAdapter<'email', SmtpConfig> {
     SMTP_SECRET_KEYS.password,
   ]);
 
-  private readonly transports = new Map<string, TransportEntry>();
+  private readonly transports = new Map<number, TransportEntry>();
 
   /** `policy`: deployment restrictions (APP_ENV, PROVIDER_ALLOWED_HOSTS); none by default. */
   constructor(private readonly policy: ProviderDeploymentPolicy = {}) {}
@@ -157,7 +159,7 @@ export class SmtpEmailAdapter implements ProviderAdapter<'email', SmtpConfig> {
       return rejected('permanent', CODES.invalidRequest, 'Email sender is not a single mailbox');
     }
     const domain = config.messageIdDomain ?? mailboxDomain(sender);
-    const messageId = smtpMessageId(context.deliveryId, domain);
+    const messageId = smtpMessageId(context.deliveryId, context.createdAt, domain);
 
     let raw: Buffer;
     let envelope: { from: string; to: string[] };

@@ -72,7 +72,7 @@ export class ValkeyTokenBucketRateLimiter implements ProviderRateLimiter {
     this.timeoutMs = options.commandTimeoutMs ?? 2_000;
   }
 
-  async tryAcquire(providerInstanceId: string, limit?: SendRateLimit): Promise<RateLimitDecision> {
+  async tryAcquire(providerInstanceId: number, limit?: SendRateLimit): Promise<RateLimitDecision> {
     const effective = limit ?? this.defaultLimit;
     const [allowed, wait] = await withTimeout(
       this.redis.nsTokenBucket(

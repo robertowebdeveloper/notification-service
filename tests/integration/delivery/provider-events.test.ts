@@ -31,7 +31,7 @@ describe('provider events -> deterministic receipt reducer', () => {
   let adapter: FakeEmailAdapter;
   let h: Harness;
   let fixture: DeliveryFixture;
-  let instanceId: string;
+  let instanceId: number;
 
   beforeAll(async () => {
     orm = await migratedOrm();
@@ -42,7 +42,7 @@ describe('provider events -> deterministic receipt reducer', () => {
     adapter = new FakeEmailAdapter('fake-resend', IDEMPOTENT_WITH_RECEIPTS);
     h = harness(orm, [adapter]);
     fixture = await createDeliveryFixture(orm, [{ type: 'fake-resend' }]);
-    instanceId = fixture.instanceIds[0] ?? '';
+    instanceId = fixture.instanceIds[0] ?? 0;
   });
 
   afterAll(closeOrm);
@@ -58,7 +58,7 @@ describe('provider events -> deterministic receipt reducer', () => {
     });
   }
 
-  async function acceptedDelivery(reference: string, email?: string): Promise<string> {
+  async function acceptedDelivery(reference: string, email?: string): Promise<number> {
     adapter.queue(() => Promise.resolve({ outcome: 'accepted', externalReference: reference }));
     const deliveryId = await createDelivery(h.repos, orm, fixture, email ? { email } : {});
     expect(await processDelivery(h).execute(await latestJob(orm, deliveryId))).toBe('accepted');

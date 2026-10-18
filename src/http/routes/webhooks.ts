@@ -1,6 +1,11 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import { Type } from 'typebox';
-import { ErrorBody, ROUTES } from '../../contracts/http-schemas.js';
+import {
+  ErrorBody,
+  parseResourceId,
+  ResourceIdParam,
+  ROUTES,
+} from '../../contracts/http-schemas.js';
 import type { IngestWebhook } from '../../application/notifications/ingest-webhook.js';
 
 /** Upper bound for webhook bodies (matches the provider parsers' own limit). */
@@ -12,7 +17,7 @@ export interface WebhookRoutesOptions {
 
 const WebhookParams = Type.Object({
   providerType: Type.String({ pattern: '^[a-z0-9][a-z0-9_-]{0,63}$' }),
-  instanceId: Type.String({ minLength: 1, maxLength: 64 }),
+  instanceId: ResourceIdParam,
 });
 
 const WebhookResponse = Type.Object({
@@ -61,7 +66,7 @@ export const webhookRoutes: FastifyPluginAsyncTypebox<WebhookRoutesOptions> = as
       const rawBody = Buffer.isBuffer(request.body) ? request.body : Buffer.alloc(0);
       return opts.ingestWebhook.execute({
         providerType: request.params.providerType,
-        instanceId: request.params.instanceId,
+        instanceId: parseResourceId(request.params.instanceId),
         rawBody,
         headers: request.headers,
         clientIp: request.ip,

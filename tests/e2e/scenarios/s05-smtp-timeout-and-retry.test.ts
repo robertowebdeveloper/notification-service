@@ -20,7 +20,7 @@ describe('scenario 5: ambiguous timeout vs certain retryable rejection', () => {
   async function followUntil(
     sys: E2eSystem,
     tenant: SeededTenant,
-    id: string,
+    id: number,
     terminal: readonly SubmissionStatus[],
   ) {
     const seen = new Set<SubmissionStatus>();

@@ -1,17 +1,16 @@
-import { randomUUID } from 'node:crypto';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { buildTestApi, emailBody, instance, type TestApi } from './support/fakes.js';
+import { buildTestApi, emailBody, instance, nextId, type TestApi } from './support/fakes.js';
 
 const ALL_SCOPES = ['notifications:write', 'notifications:read', 'notifications:retry'] as const;
 
 describe('public notifications API', () => {
   let api: TestApi;
-  let tenantId: string;
+  let tenantId: number;
   let key: string;
 
   beforeEach(async () => {
     api = await buildTestApi();
-    tenantId = randomUUID();
+    tenantId = nextId();
     key = api.apiKeys.add(tenantId, [...ALL_SCOPES]);
     api.providerConfig.addPolicy(tenantId, [instance(tenantId)]);
   });
@@ -69,7 +68,7 @@ describe('public notifications API', () => {
     it('accepts with 202, Location and the pending body', async () => {
       const res = await post(emailBody());
       expect(res.statusCode).toBe(202);
-      const body = res.json<{ id: string; submissionStatus: string }>();
+      const body = res.json<{ id: number; submissionStatus: string }>();
       expect(body.submissionStatus).toBe('pending');
       expect(res.headers.location).toBe(`/v1/notifications/${body.id}`);
 
@@ -210,7 +209,7 @@ describe('public notifications API', () => {
       expect(unknownRoute.statusCode).toBe(422);
       expect(unknownRoute.json<{ code: string }>().code).toBe('no_compatible_route');
 
-      const otherTenant = randomUUID();
+      const otherTenant = nextId();
       const otherKey = api.apiKeys.add(otherTenant, ['notifications:write']);
       api.providerConfig.addPolicy(otherTenant, [instance(otherTenant, { enabled: false })]);
       const disabled = await post(emailBody(), {}, otherKey);
@@ -218,25 +217,25 @@ describe('public notifications API', () => {
     });
 
     it('snapshots only compatible enabled providers, honoring fallbackEnabled', async () => {
-      const t = randomUUID();
+      const t = nextId();
       const k = api.apiKeys.add(t, ['notifications:write']);
       const a = instance(t, { name: 'a', enabled: false });
       const b = instance(t, { name: 'b' });
       const c = instance(t, { name: 'c', providerType: 'resend', config: {} });
       api.providerConfig.addPolicy(t, [a, b, c]);
       const res = await post(emailBody(), {}, k);
-      const id = res.json<{ id: string }>().id;
+      const id = res.json<{ id: number }>().id;
       expect(api.notifications.byId.get(id)?.input.routing.providerInstanceIds).toEqual([
         b.id,
         c.id,
       ]);
 
-      const t2 = randomUUID();
+      const t2 = nextId();
       const k2 = api.apiKeys.add(t2, ['notifications:write']);
       const d = instance(t2);
       api.providerConfig.addPolicy(t2, [d, instance(t2)], { fallbackEnabled: false });
       const res2 = await post(emailBody(), {}, k2);
-      const id2 = res2.json<{ id: string }>().id;
+      const id2 = res2.json<{ id: number }>().id;
       expect(api.notifications.byId.get(id2)?.input.routing.providerInstanceIds).toEqual([d.id]);
     });
 
@@ -273,7 +272,7 @@ describe('public notifications API', () => {
 
   describe('GET /v1/notifications', () => {
     it('returns the view of a visible notification and 404 across tenants', async () => {
-      const created = (await post(emailBody())).json<{ id: string }>();
+      const created = (await post(emailBody())).json<{ id: number }>();
       const res = await api.app.inject({
         method: 'GET',
         url: `/v1/notifications/${created.id}`,
@@ -290,7 +289,7 @@ describe('public notifications API', () => {
         lastError: null,
       });
 
-      const other = api.apiKeys.add(randomUUID(), ['notifications:read']);
+      const other = api.apiKeys.add(nextId(), ['notifications:read']);
       const denied = await api.app.inject({
         method: 'GET',
         url: `/v1/notifications/${created.id}`,
@@ -337,7 +336,7 @@ describe('public notifications API', () => {
   });
 
   describe('POST /v1/notifications/:id/retry', () => {
-    async function retry(id: string, headers: Record<string, string> = {}) {
+    async function retry(id: number, headers: Record<string, string> = {}) {
       return api.app.inject({
         method: 'POST',
         url: `/v1/notifications/${id}/retry`,
@@ -346,7 +345,7 @@ describe('public notifications API', () => {
     }
 
     it('schedules a retry with the policy budget and the actor key', async () => {
-      const created = (await post(emailBody())).json<{ id: string }>();
+      const created = (await post(emailBody())).json<{ id: number }>();
       const res = await retry(created.id);
       expect(res.statusCode).toBe(202);
       expect(res.json()).toEqual({ id: created.id, submissionStatus: 'retry_wait', generation: 2 });
@@ -364,7 +363,7 @@ describe('public notifications API', () => {
     });
 
     it('maps not_retryable to 409 conflict and requires its own idempotency key', async () => {
-      const created = (await post(emailBody())).json<{ id: string }>();
+      const created = (await post(emailBody())).json<{ id: number }>();
       api.manualRetries.next = { kind: 'not_retryable', submissionStatus: 'accepted' };
       const res = await retry(created.id);
       expect(res.statusCode).toBe(409);
@@ -379,8 +378,8 @@ describe('public notifications API', () => {
     });
 
     it('returns 404 for notifications of another tenant without calling the repository', async () => {
-      const created = (await post(emailBody())).json<{ id: string }>();
-      const other = api.apiKeys.add(randomUUID(), ['notifications:retry']);
+      const created = (await post(emailBody())).json<{ id: number }>();
+      const other = api.apiKeys.add(nextId(), ['notifications:retry']);
       const res = await retry(created.id, { authorization: `Bearer ${other}` });
       expect(res.statusCode).toBe(404);
       expect(api.manualRetries.calls).toHaveLength(0);
@@ -388,7 +387,7 @@ describe('public notifications API', () => {
 
     it('requires the retry scope', async () => {
       const writer = api.apiKeys.add(tenantId, ['notifications:write']);
-      const res = await retry(randomUUID(), { authorization: `Bearer ${writer}` });
+      const res = await retry(nextId(), { authorization: `Bearer ${writer}` });
       expect(res.statusCode).toBe(403);
     });
   });

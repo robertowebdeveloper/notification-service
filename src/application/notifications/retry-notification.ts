@@ -16,14 +16,14 @@ export interface RetryNotificationDeps {
 }
 
 export interface RetryNotificationCommand {
-  tenantId: string;
-  apiKeyId: string;
-  notificationId: string;
+  tenantId: number;
+  apiKeyId: number;
+  notificationId: number;
   idempotencyKey: string;
 }
 
 export interface RetryNotificationOutcome {
-  notificationId: string;
+  notificationId: number;
   generation: number;
   replayed: boolean;
 }

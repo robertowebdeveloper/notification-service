@@ -53,9 +53,10 @@ describe('recipient normalization for suppressions', () => {
 
 describe('provider idempotency key', () => {
   const operation = {
-    tenantId: 't1',
-    deliveryId: 'd1',
-    providerInstanceId: 'p1',
+    tenantId: 1,
+    deliveryId: 41,
+    deliveryCreatedAt: new Date('2026-10-18T10:00:00.000Z'),
+    providerInstanceId: 7,
     operationAttemptNumber: 1,
   };
 
@@ -63,13 +64,19 @@ describe('provider idempotency key', () => {
     const key = deriveProviderIdempotencyKey(operation);
     expect(deriveProviderIdempotencyKey({ ...operation })).toBe(key);
     expect(key).toMatch(/^nsd1-[0-9a-f]{64}$/);
-    expect(key).not.toContain('d1:');
+    expect(key).not.toContain('41:');
   });
 
   it('differs for a new operation (other attempt or provider)', () => {
     const key = deriveProviderIdempotencyKey(operation);
     expect(deriveProviderIdempotencyKey({ ...operation, operationAttemptNumber: 2 })).not.toBe(key);
-    expect(deriveProviderIdempotencyKey({ ...operation, providerInstanceId: 'p2' })).not.toBe(key);
+    expect(deriveProviderIdempotencyKey({ ...operation, providerInstanceId: 8 })).not.toBe(key);
+  });
+
+  it('differs for a delivery with the same id created at another time (database reset)', () => {
+    const key = deriveProviderIdempotencyKey(operation);
+    const recreated = { ...operation, deliveryCreatedAt: new Date('2026-10-19T10:00:00.000Z') };
+    expect(deriveProviderIdempotencyKey(recreated)).not.toBe(key);
   });
 });
 

@@ -19,9 +19,25 @@ export type Em = ReturnType<typeof forkEm>;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Ids coming from HTTP paths may be arbitrary strings; avoid PostgreSQL cast errors. */
+/** Lease tokens may come from job payloads; avoid PostgreSQL cast errors. */
 export function isUuid(value: string): boolean {
   return UUID_RE.test(value);
+}
+
+/** Ids are bigint identity values: positive, and exact as JS numbers up to 2^53 - 1. */
+export function isId(value: number): boolean {
+  return Number.isSafeInteger(value) && value > 0;
+}
+
+/** bigint columns arrive as text from the driver. */
+export function toId(value: unknown): number {
+  const parsed = num(value);
+  if (!isId(parsed)) throw new TypeError(`Invalid id: ${String(value)}`);
+  return parsed;
+}
+
+export function toIdOrNull(value: unknown): number | null {
+  return value === null || value === undefined ? null : toId(value);
 }
 
 export function isUniqueViolation(error: unknown, constraint?: string): boolean {
@@ -91,16 +107,16 @@ export function addMs(date: Date, ms: number): Date {
 }
 
 /** Opaque keyset cursor: base64url of [createdAt ISO, id]. */
-export function encodeCursor(createdAt: Date, id: string): string {
+export function encodeCursor(createdAt: Date, id: number): string {
   return Buffer.from(JSON.stringify([createdAt.toISOString(), id]), 'utf8').toString('base64url');
 }
 
-export function decodeCursor(cursor: string): { createdAt: Date; id: string } {
+export function decodeCursor(cursor: string): { createdAt: Date; id: number } {
   try {
     const parsed: unknown = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
     if (Array.isArray(parsed) && parsed.length === 2) {
       const [createdAt, id] = parsed as unknown[];
-      if (typeof createdAt === 'string' && typeof id === 'string' && isUuid(id)) {
+      if (typeof createdAt === 'string' && typeof id === 'number' && isId(id)) {
         const date = new Date(createdAt);
         if (!Number.isNaN(date.getTime())) return { createdAt: date, id };
       }

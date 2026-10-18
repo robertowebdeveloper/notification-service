@@ -18,8 +18,8 @@ export class InvalidCursorError extends Error {
 // ---------------------------------------------------------------- API keys
 
 export interface ApiKeyRecord {
-  id: string;
-  tenantId: string;
+  id: number;
+  tenantId: number;
   /** Hash stored at creation; compare with a timing-safe function. */
   keyHash: string;
   scopes: ApiScope[];
@@ -31,7 +31,7 @@ export interface ApiKeyRecord {
 export interface ApiKeyRepository {
   /** Lookup by the non-secret key prefix; the caller verifies the hash and validity. */
   findByPrefix(keyPrefix: string): Promise<ApiKeyRecord | null>;
-  touchLastUsed(apiKeyId: string, at: Date): Promise<void>;
+  touchLastUsed(apiKeyId: number, at: Date): Promise<void>;
 }
 
 // ---------------------------------------------------------------- Providers and routing
@@ -58,8 +58,8 @@ export interface ProviderInstanceLimits {
 }
 
 export interface ProviderInstanceRecord {
-  id: string;
-  tenantId: string;
+  id: number;
+  tenantId: number;
   name: string;
   providerType: string;
   channel: Channel;
@@ -73,8 +73,8 @@ export interface ProviderInstanceRecord {
 }
 
 export interface RoutingPolicyRecord {
-  id: string;
-  tenantId: string;
+  id: number;
+  tenantId: number;
   routingKey: string;
   channel: Channel;
   platform: string | null;
@@ -88,15 +88,15 @@ export interface RoutingPolicyRecord {
 }
 
 export interface ProviderConfigRepository {
-  findProviderInstance(tenantId: string, id: string): Promise<ProviderInstanceRecord | null>;
+  findProviderInstance(tenantId: number, id: number): Promise<ProviderInstanceRecord | null>;
   /** Webhook entry point: tenant is derived from the instance, never from the payload. */
   findProviderInstanceForWebhook(
     providerType: string,
-    instanceId: string,
+    instanceId: number,
   ): Promise<ProviderInstanceRecord | null>;
   /** Latest version of the policy for (tenant, routingKey, channel, platform). */
   resolveRoutingPolicy(
-    tenantId: string,
+    tenantId: number,
     routingKey: string,
     channel: Channel,
     platform: string | null,
@@ -106,8 +106,8 @@ export interface ProviderConfigRepository {
 // ---------------------------------------------------------------- Provider events (webhooks)
 
 export interface ProviderEventInput {
-  tenantId: string;
-  providerInstanceId: string;
+  tenantId: number;
+  providerInstanceId: number;
   externalEventId: string;
   externalMessageId: string | null;
   type: NormalizedEventType;
@@ -118,16 +118,16 @@ export interface ProviderEventInput {
 }
 
 export interface StoredProviderEvent {
-  id: string;
-  tenantId: string;
-  providerInstanceId: string;
+  id: number;
+  tenantId: number;
+  providerInstanceId: number;
   externalEventId: string;
   externalMessageId: string | null;
   type: NormalizedEventType;
   occurredAt: Date;
   receivedAt: Date;
   /** Correlated delivery, null while the external reference is not yet known. */
-  deliveryId: string | null;
+  deliveryId: number | null;
   processedAt: Date | null;
 }
 
@@ -154,7 +154,7 @@ export interface ProviderEventRepository {
   ): Promise<StoredProviderEvent[]>;
   /** Retries correlation of uncorrelated events; returns how many got a delivery. */
   correlatePending(limit: number): Promise<number>;
-  markProcessed(tenantId: string, eventId: string, at: Date): Promise<boolean>;
+  markProcessed(tenantId: number, eventId: number, at: Date): Promise<boolean>;
 }
 
 export interface DeliveryReceiptRepository {
@@ -163,8 +163,8 @@ export interface DeliveryReceiptRepository {
    * (the deterministic reducer decides precedence). Returns false when nothing changed.
    */
   updateReceiptStatus(
-    tenantId: string,
-    deliveryId: string,
+    tenantId: number,
+    deliveryId: number,
     from: readonly ReceiptStatus[],
     to: ReceiptStatus,
   ): Promise<boolean>;
@@ -176,17 +176,17 @@ export type SuppressionReason = 'hard_bounce' | 'complaint' | 'manual' | 'unsubs
 export type SuppressionSource = 'provider_event' | 'admin';
 
 export interface SuppressionInput {
-  tenantId: string;
+  tenantId: number;
   channel: Channel;
   /** Channel-specific normalized recipient (normalization belongs to the domain). */
   recipientKey: string;
   reason: SuppressionReason;
   source: SuppressionSource;
-  providerEventId: string | null;
+  providerEventId: number | null;
 }
 
 export interface SuppressionRepository {
-  isSuppressed(tenantId: string, channel: Channel, recipientKey: string): Promise<boolean>;
+  isSuppressed(tenantId: number, channel: Channel, recipientKey: string): Promise<boolean>;
   /** Idempotent: an existing suppression is kept unchanged. Returns true when created. */
   add(input: SuppressionInput): Promise<boolean>;
 }
@@ -194,7 +194,7 @@ export interface SuppressionRepository {
 // ---------------------------------------------------------------- Audit
 
 export interface AuditEventInput {
-  tenantId: string | null;
+  tenantId: number | null;
   actor: string;
   operation: string;
   resourceType: string;
@@ -249,24 +249,24 @@ export interface RoutingPolicyConfig {
 }
 
 export interface UpsertOutcome {
-  id: string;
+  id: number;
   changed: boolean;
 }
 
 export interface AdminConfigRepository {
   /** Each method runs in its own transaction and writes an audit event when something changed. */
   upsertTenant(actor: string, tenant: TenantConfig): Promise<UpsertOutcome>;
-  upsertApiKey(actor: string, tenantId: string, key: ApiKeyConfig): Promise<UpsertOutcome>;
+  upsertApiKey(actor: string, tenantId: number, key: ApiKeyConfig): Promise<UpsertOutcome>;
   /** Bumps revision when any field changes. */
   upsertProviderInstance(
     actor: string,
-    tenantId: string,
+    tenantId: number,
     instance: ProviderInstanceConfig,
   ): Promise<UpsertOutcome>;
   /** Inserts a new version only when the effective policy differs from the latest one. */
   publishRoutingPolicy(
     actor: string,
-    tenantId: string,
+    tenantId: number,
     policy: RoutingPolicyConfig,
   ): Promise<UpsertOutcome & { version: number }>;
 }

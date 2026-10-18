@@ -137,7 +137,7 @@ export class ResendEmailAdapter implements ProviderAdapter<'email', ResendConfig
     RESEND_SECRET_KEYS.webhookSecret,
   ]);
 
-  private readonly transports = new Map<string, TransportEntry>();
+  private readonly transports = new Map<number, TransportEntry>();
 
   /** `policy`: deployment restrictions (APP_ENV, PROVIDER_ALLOWED_HOSTS); none by default. */
   constructor(private readonly policy: ProviderDeploymentPolicy = {}) {}

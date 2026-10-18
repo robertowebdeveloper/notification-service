@@ -40,8 +40,8 @@ function instance(
 ): ResolvedProviderInstance<SmtpConfig> {
   instanceCounter += 1;
   return {
-    id: `smtp-instance-${instanceCounter}`,
-    tenantId: 'tenant-1',
+    id: instanceCounter,
+    tenantId: 1,
     providerType: 'smtp',
     revision,
     config,
@@ -133,9 +133,9 @@ describe('SMTP adapter', () => {
       const first = await adapter.send(emailPayload('accept'), context);
       const second = await adapter.send(emailPayload('accept'), {
         ...context,
-        attemptId: 'another-attempt',
+        attemptId: context.attemptId + 1,
       });
-      const expectedId = smtpMessageId(context.deliveryId, 'example.test');
+      const expectedId = smtpMessageId(context.deliveryId, context.createdAt, 'example.test');
       expect(first).toEqual({ outcome: 'accepted', externalReference: expectedId });
       expect(second).toEqual(first);
       const headers = server.messages
@@ -150,7 +150,11 @@ describe('SMTP adapter', () => {
       );
       const result = await adapter.send(emailPayload('accept'), context);
       expect(result).toMatchObject({
-        externalReference: smtpMessageId(context.deliveryId, 'mail.example.test'),
+        externalReference: smtpMessageId(
+          context.deliveryId,
+          context.createdAt,
+          'mail.example.test',
+        ),
       });
     });
   });

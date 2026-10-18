@@ -4,9 +4,14 @@ import type { ProviderCapabilities } from '../contracts/provider-port.js';
 const KEY_PREFIX = 'nsd1';
 
 export interface ProviderOperation {
-  tenantId: string;
-  deliveryId: string;
-  providerInstanceId: string;
+  tenantId: number;
+  deliveryId: number;
+  /**
+   * Sequential ids repeat after a database reset or in another environment sharing the provider
+   * account: the creation time keeps keys of different deliveries apart.
+   */
+  deliveryCreatedAt: Date;
+  providerInstanceId: number;
   /**
    * Attempt number that started the operation. A new operation (first attempt, retry after a
    * certain rejection, fallback) gets a new key; a safe replay of an ambiguous attempt reuses
@@ -25,6 +30,7 @@ export function deriveProviderIdempotencyKey(operation: ProviderOperation): stri
       [
         operation.tenantId,
         operation.deliveryId,
+        operation.deliveryCreatedAt.toISOString(),
         operation.providerInstanceId,
         String(operation.operationAttemptNumber),
       ].join(':'),

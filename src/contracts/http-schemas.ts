@@ -132,8 +132,30 @@ export const IdempotencyHeaders = Type.Object({
   'idempotency-key': Type.String({ minLength: 1, maxLength: LIMITS.idempotencyKeyMaxLength }),
 });
 
+/** Resource ids are PostgreSQL bigint identity values (exact as JSON numbers up to 2^53 - 1). */
+export const ResourceId = Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER });
+
+/**
+ * Resource id in a path segment. Type coercion is disabled (bodies are validated strictly), so
+ * the segment is validated as a decimal string and converted with `parseResourceId`.
+ */
+export const ResourceIdParam = Type.String({
+  pattern: '^[1-9][0-9]{0,15}$',
+  description: 'Positive integer id',
+  examples: ['42'],
+});
+
+/**
+ * Path id as a number. Ids beyond 2^53 - 1 cannot exist: they map to 0, which matches no row
+ * (identities start at 1), so callers take their usual not-found path, abuse budgets included.
+ */
+export function parseResourceId(segment: string): number {
+  const id = Number(segment);
+  return Number.isSafeInteger(id) && id > 0 ? id : 0;
+}
+
 export const CreateNotificationResponse = Type.Object({
-  id: Type.String({ format: 'uuid' }),
+  id: ResourceId,
   submissionStatus: Type.Literal('pending'),
 });
 export type CreateNotificationResponse = Static<typeof CreateNotificationResponse>;
@@ -141,14 +163,14 @@ export type CreateNotificationResponse = Static<typeof CreateNotificationRespons
 const DateTime = Type.String({ format: 'date-time' });
 
 export const RetryNotificationResponse = Type.Object({
-  id: Type.String({ format: 'uuid' }),
+  id: ResourceId,
   submissionStatus: Type.Literal('retry_wait'),
   generation: Type.Integer({ minimum: 1 }),
 });
 export type RetryNotificationResponse = Static<typeof RetryNotificationResponse>;
 
 export const NotificationView = Type.Object({
-  id: Type.String({ format: 'uuid' }),
+  id: ResourceId,
   channel: Type.Enum(CHANNELS),
   /** Channel platform (push/messaging), null for email and sms. */
   platform: Type.Union([Type.String(), Type.Null()]),

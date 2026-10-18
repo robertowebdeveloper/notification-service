@@ -1,5 +1,4 @@
 import type { QueryResult } from '@mikro-orm/core';
-import { randomUUID } from 'node:crypto';
 import type { Channel, ChannelPayload } from '../../contracts/channels.js';
 import type { ProviderErrorKind } from '../../contracts/provider-port.js';
 import type { AttemptOutcome, ReceiptStatus, SubmissionStatus } from '../../contracts/statuses.js';
@@ -13,12 +12,13 @@ import type { ClaimedDelivery } from '../../application/ports/repositories.js';
 import {
   FencingRollback,
   forkEm,
-  isUuid,
+  isId,
   num,
   str,
   strOrNull,
   toDate,
   toDateOrNull,
+  toId,
   type Orm,
   type Row,
 } from './sql-support.js';
@@ -40,10 +40,10 @@ const ATTEMPT_COLUMNS = `a.id as attempt_id, a.attempt_number, a.generation as a
 
 function toAttempt(row: Row): AttemptRecord {
   return {
-    attemptId: str(row.attempt_id),
+    attemptId: toId(row.attempt_id),
     attemptNumber: num(row.attempt_number),
     generation: num(row.attempt_generation),
-    providerInstanceId: str(row.provider_instance_id),
+    providerInstanceId: toId(row.provider_instance_id),
     providerIdempotencyKey: str(row.provider_idempotency_key),
     outcome: str(row.outcome) as AttemptOutcome,
     errorKind: strOrNull(row.error_kind) as ProviderErrorKind | null,
@@ -57,8 +57,8 @@ function toAttempt(row: Row): AttemptRecord {
 export class PgDeliveryControlRepository implements DeliveryControlRepository {
   constructor(private readonly orm: Orm) {}
 
-  async attemptHistory(tenantId: string, deliveryId: string): Promise<AttemptRecord[]> {
-    if (!isUuid(tenantId) || !isUuid(deliveryId)) return [];
+  async attemptHistory(tenantId: number, deliveryId: number): Promise<AttemptRecord[]> {
+    if (!isId(tenantId) || !isId(deliveryId)) return [];
     const rows = await forkEm(this.orm).execute<Row[]>(
       `select ${ATTEMPT_COLUMNS} from delivery_attempts a
        where a.tenant_id = ? and a.delivery_id = ?
@@ -144,8 +144,8 @@ export class PgDeliveryControlRepository implements DeliveryControlRepository {
       [minIntervalMs, limit],
     );
     return rows.map((row) => ({
-      tenantId: str(row.tenant_id),
-      deliveryId: str(row.delivery_id),
+      tenantId: toId(row.tenant_id),
+      deliveryId: toId(row.delivery_id),
       generation: num(row.generation),
       version: num(row.version),
       attemptsUsed: num(row.attempts_used),
@@ -156,8 +156,8 @@ export class PgDeliveryControlRepository implements DeliveryControlRepository {
     }));
   }
 
-  async touchUnknown(tenantId: string, deliveryId: string, version: number): Promise<boolean> {
-    if (!isUuid(tenantId) || !isUuid(deliveryId)) return false;
+  async touchUnknown(tenantId: number, deliveryId: number, version: number): Promise<boolean> {
+    if (!isId(tenantId) || !isId(deliveryId)) return false;
     const result = await forkEm(this.orm).execute<QueryResult>(
       `update deliveries set updated_at = now()
        where tenant_id = ? and id = ? and version = ? and submission_status = 'unknown'`,
@@ -168,13 +168,13 @@ export class PgDeliveryControlRepository implements DeliveryControlRepository {
   }
 
   async resolveUnknownAccepted(
-    tenantId: string,
-    deliveryId: string,
+    tenantId: number,
+    deliveryId: number,
     version: number | null,
     receiptStatus: ReceiptStatus,
     externalReference: string | null,
   ): Promise<boolean> {
-    if (!isUuid(tenantId) || !isUuid(deliveryId)) return false;
+    if (!isId(tenantId) || !isId(deliveryId)) return false;
     const em = forkEm(this.orm);
     try {
       return await em.transactional(async (tx) => {
@@ -228,12 +228,12 @@ export class PgDeliveryControlRepository implements DeliveryControlRepository {
   }
 
   async scheduleSafeReplay(
-    tenantId: string,
-    deliveryId: string,
+    tenantId: number,
+    deliveryId: number,
     version: number,
     at: Date,
   ): Promise<boolean> {
-    if (!isUuid(tenantId) || !isUuid(deliveryId)) return false;
+    if (!isId(tenantId) || !isId(deliveryId)) return false;
     const em = forkEm(this.orm);
     try {
       return await em.transactional(async (tx) => {
@@ -251,9 +251,9 @@ export class PgDeliveryControlRepository implements DeliveryControlRepository {
         if (!row) throw new FencingRollback();
         await tx.execute(
           `insert into outbox_events
-             (id, tenant_id, delivery_id, generation, event_type, status, available_at)
-           values (?, ?, ?, ?, 'dispatch_delivery', 'pending', ?)`,
-          [randomUUID(), tenantId, deliveryId, num(row.generation), at],
+             (tenant_id, delivery_id, generation, event_type, status, available_at)
+           values (?, ?, ?, 'dispatch_delivery', 'pending', ?)`,
+          [tenantId, deliveryId, num(row.generation), at],
         );
         return true;
       });
@@ -263,8 +263,8 @@ export class PgDeliveryControlRepository implements DeliveryControlRepository {
     }
   }
 
-  async findTarget(tenantId: string, deliveryId: string): Promise<DeliveryTarget | null> {
-    if (!isUuid(tenantId) || !isUuid(deliveryId)) return null;
+  async findTarget(tenantId: number, deliveryId: number): Promise<DeliveryTarget | null> {
+    if (!isId(tenantId) || !isId(deliveryId)) return null;
     const rows = await forkEm(this.orm).execute<Row[]>(
       `select d.tenant_id, d.id, d.channel, d.submission_status, d.receipt_status, n.payload
        from deliveries d
@@ -275,8 +275,8 @@ export class PgDeliveryControlRepository implements DeliveryControlRepository {
     const row = rows[0];
     if (!row) return null;
     return {
-      tenantId: str(row.tenant_id),
-      deliveryId: str(row.id),
+      tenantId: toId(row.tenant_id),
+      deliveryId: toId(row.id),
       channel: str(row.channel) as Channel,
       submissionStatus: str(row.submission_status) as SubmissionStatus,
       receiptStatus: str(row.receipt_status) as ReceiptStatus,

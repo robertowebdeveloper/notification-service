@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { IngressLimiter } from '../../../../src/application/notifications/ingress-guards.js';
 import { RetryNotification } from '../../../../src/application/notifications/retry-notification.js';
@@ -13,7 +12,7 @@ const silent = { warn: () => undefined };
 function detail(platform: string | null): NotificationDetail {
   const now = new Date();
   return {
-    id: randomUUID(),
+    id: 42,
     channel: 'push',
     platform,
     routingKey: 'alerts',
@@ -52,8 +51,8 @@ describe('RetryNotification', () => {
     });
 
     const outcome = await useCase.execute({
-      tenantId: randomUUID(),
-      apiKeyId: randomUUID(),
+      tenantId: 3,
+      apiKeyId: 5,
       notificationId: stored.id,
       idempotencyKey: 'retry-1',
     });

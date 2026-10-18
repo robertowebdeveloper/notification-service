@@ -145,7 +145,7 @@ describe('delivery pipeline: outbox -> BullMQ -> worker -> provider', () => {
       () => deliveryRow(orm, deliveryId),
       (row) => row.submission_status === 'accepted',
     );
-    const job = await queue.getJob(dispatchJobId(String(event?.id), 1));
+    const job = await queue.getJob(dispatchJobId(Number(event?.id), 1));
     expect(job?.data).toEqual({ deliveryId, generation: 1, outboxEventId: event?.id });
     expect(job?.opts.attempts).toBe(1);
     expect(adapter.sends).toHaveLength(1);
@@ -203,7 +203,7 @@ describe('delivery pipeline: outbox -> BullMQ -> worker -> provider', () => {
     expect((await dispatch.runOnce()).published).toBe(1);
     const [event] = await outboxRows(orm, deliveryId);
     expect(event).toMatchObject({ status: 'published', dispatch_count: 2 });
-    expect(await queue.getJob(dispatchJobId(String(event?.id), 2))).toBeDefined();
+    expect(await queue.getJob(dispatchJobId(Number(event?.id), 2))).toBeDefined();
 
     startWorker(processDelivery(h));
     await waitFor(
@@ -255,7 +255,7 @@ describe('delivery pipeline: outbox -> BullMQ -> worker -> provider', () => {
     const jobs = await Promise.all(
       deliveries.map(async (deliveryId) => {
         const [event] = await outboxRows(orm, deliveryId);
-        return { deliveryId, generation: 1, outboxEventId: String(event?.id) };
+        return { deliveryId, generation: 1, outboxEventId: Number(event?.id) };
       }),
     );
     const outcomes = await Promise.all(
@@ -281,7 +281,7 @@ describe('delivery pipeline: outbox -> BullMQ -> worker -> provider', () => {
     const outcome = await processDelivery(h, { rateLimiter: limiter }).execute({
       deliveryId,
       generation: 1,
-      outboxEventId: String(event?.id),
+      outboxEventId: Number(event?.id),
     });
     expect(outcome).toBe('deferred');
     expect(adapter.sends).toHaveLength(0);

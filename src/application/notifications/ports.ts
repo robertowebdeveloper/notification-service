@@ -24,7 +24,7 @@ export interface RateLimiter {
 
 /** Senders a tenant may use in `content.from` (managed by operators via config:apply). */
 export interface SenderPolicyRepository {
-  allowedSenders(tenantId: string): Promise<readonly string[]>;
+  allowedSenders(tenantId: number): Promise<readonly string[]>;
 }
 
 export type Clock = () => Date;

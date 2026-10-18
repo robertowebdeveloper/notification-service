@@ -36,7 +36,7 @@ export const RESEND_SECRET_REF = 'env:E2E_RESEND';
 export const RESEND_TEST_API_KEY = 're_e2e_test_key_not_a_real_secret';
 
 export interface DeliveryRow extends Row {
-  id: string;
+  id: number;
   tenant_id: string;
   notification_id: string;
   submission_status: SubmissionStatus;
@@ -48,7 +48,7 @@ export interface DeliveryRow extends Row {
 }
 
 export interface AttemptRow extends Row {
-  id: string;
+  id: number;
   attempt_number: number;
   generation: number;
   provider_instance_id: string;
@@ -62,7 +62,7 @@ export interface AttemptRow extends Row {
 }
 
 export interface OutboxRow extends Row {
-  id: string;
+  id: number;
   delivery_id: string;
   generation: number;
   status: string;
@@ -323,7 +323,7 @@ export class E2eSystem {
   /** Polls GET /v1/notifications/:id until the submission status is one of `statuses`. */
   async waitForStatus(
     tenant: SeededTenant,
-    id: string,
+    id: number,
     statuses: readonly SubmissionStatus[],
     timeoutMs: number = TIMING.deliveryMs,
   ): Promise<NotificationView> {
@@ -343,7 +343,7 @@ export class E2eSystem {
     );
   }
 
-  async view(tenant: SeededTenant, id: string): Promise<NotificationView> {
+  async view(tenant: SeededTenant, id: number): Promise<NotificationView> {
     const response = await this.api.getNotification(tenant.apiKey, id);
     if (response.status !== 200) throw new Error(`GET answered ${String(response.status)}`);
     return response.body;
@@ -351,13 +351,13 @@ export class E2eSystem {
 
   // ------------------------------------------------------------------ DB inspection
 
-  async delivery(notificationId: string): Promise<DeliveryRow | undefined> {
+  async delivery(notificationId: number): Promise<DeliveryRow | undefined> {
     return this.db.one<DeliveryRow>('select * from deliveries where notification_id = ?', [
       notificationId,
     ]);
   }
 
-  async attempts(notificationId: string): Promise<AttemptRow[]> {
+  async attempts(notificationId: number): Promise<AttemptRow[]> {
     return this.db.query<AttemptRow>(
       `select a.* from delivery_attempts a join deliveries d on d.id = a.delivery_id
        where d.notification_id = ? order by a.attempt_number`,
@@ -365,7 +365,7 @@ export class E2eSystem {
     );
   }
 
-  async outbox(notificationId: string): Promise<OutboxRow[]> {
+  async outbox(notificationId: number): Promise<OutboxRow[]> {
     return this.db.query<OutboxRow>(
       `select o.* from outbox_events o join deliveries d on d.id = o.delivery_id
        where d.notification_id = ? order by o.generation, o.created_at`,
@@ -373,7 +373,7 @@ export class E2eSystem {
     );
   }
 
-  async deliveryState(notificationId: string) {
+  async deliveryState(notificationId: number) {
     const [delivery, attempts, outbox] = await Promise.all([
       this.delivery(notificationId),
       this.attempts(notificationId),

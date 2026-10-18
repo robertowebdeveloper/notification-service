@@ -28,13 +28,13 @@ export interface CreateNotificationDeps {
 }
 
 export interface CreateNotificationCommand {
-  tenantId: string;
+  tenantId: number;
   idempotencyKey: string;
   body: CreateNotificationBody;
 }
 
 export interface CreateNotificationOutcome {
-  notificationId: string;
+  notificationId: number;
   replayed: boolean;
 }
 

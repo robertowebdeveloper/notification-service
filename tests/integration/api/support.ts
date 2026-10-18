@@ -109,11 +109,11 @@ export async function buildHarness(
 }
 
 export interface TenantSetup {
-  tenantId: string;
+  tenantId: number;
   slug: string;
   /** Plaintext keys by name: `all`, `read`, `write`, `retry`. */
   keys: Record<string, string>;
-  instanceIds: Record<string, string>;
+  instanceIds: Record<string, number>;
 }
 
 /** Creates a tenant through config:apply (SMTP + Resend instances, transactional policy). */
@@ -172,13 +172,13 @@ export async function setupTenant(orm: MikroORM): Promise<TenantSetup> {
   });
   const keys = Object.fromEntries(result.createdApiKeys.map((k) => [k.name, k.plaintext]));
   const tenantRows = await queryRows(orm, `select id from tenants where slug = ?`, [slug]);
-  const tenantId = String(tenantRows[0]?.id);
+  const tenantId = Number(tenantRows[0]?.id);
   const instances = await queryRows(
     orm,
     `select id, name from provider_instances where tenant_id = ?`,
     [tenantId],
   );
-  const instanceIds = Object.fromEntries(instances.map((r) => [String(r.name), String(r.id)]));
+  const instanceIds = Object.fromEntries(instances.map((r) => [String(r.name), Number(r.id)]));
   return { tenantId, slug, keys, instanceIds };
 }
 

@@ -14,10 +14,10 @@ import type { Channel } from '../../../../src/contracts/channels.js';
 import type { DeliveryJobData } from '../../../../src/contracts/jobs.js';
 import { RecordingMetrics } from '../../observability/recording-metrics.js';
 
-function event(id: string, dispatchCount = 1, channel: Channel = 'email'): ClaimedOutboxEvent {
+function event(id: number, dispatchCount = 1, channel: Channel = 'email'): ClaimedOutboxEvent {
   return {
     id,
-    deliveryId: `delivery-${id}`,
+    deliveryId: 1000 + id,
     generation: 1,
     channel,
     dispatchCount,
@@ -26,18 +26,18 @@ function event(id: string, dispatchCount = 1, channel: Channel = 'email'): Claim
 }
 
 class FakeOutbox implements OutboxRepository {
-  published: string[] = [];
-  released: { id: string; error: string; retryAfterMs: number }[] = [];
+  published: number[] = [];
+  released: { id: number; error: string; retryAfterMs: number }[] = [];
   constructor(private readonly events: ClaimedOutboxEvent[]) {}
   claimAvailable(): Promise<ClaimedOutboxEvent[]> {
     return Promise.resolve(this.events.splice(0));
   }
-  markPublished(id: string): Promise<boolean> {
+  markPublished(id: number): Promise<boolean> {
     this.published.push(id);
     return Promise.resolve(true);
   }
   releaseAfterError(
-    id: string,
+    id: number,
     _lease: string,
     error: string,
     retryAfterMs: number,
@@ -66,7 +66,7 @@ class FakePublisher implements DeliveryJobPublisher {
 
 describe('DispatchOutbox', () => {
   it('publishes references only with the deterministic job id, then acks', async () => {
-    const outbox = new FakeOutbox([event('e1', 3)]);
+    const outbox = new FakeOutbox([event(1, 3)]);
     const publisher = new FakePublisher();
     const dispatcher = new DispatchOutbox({
       outbox,
@@ -80,15 +80,15 @@ describe('DispatchOutbox', () => {
     expect(publisher.calls).toEqual([
       {
         channel: 'email',
-        jobId: 'dispatch-e1-3',
-        data: { deliveryId: 'delivery-e1', generation: 1, outboxEventId: 'e1' },
+        jobId: 'dispatch-1-3',
+        data: { deliveryId: 1001, generation: 1, outboxEventId: 1 },
       },
     ]);
-    expect(outbox.published).toEqual(['e1']);
+    expect(outbox.published).toEqual([1]);
   });
 
   it('does not ack on queue failure and fails the rest of the batch fast', async () => {
-    const outbox = new FakeOutbox([event('e1'), event('e2'), event('e3')]);
+    const outbox = new FakeOutbox([event(1), event(2), event(3)]);
     const publisher = new FakePublisher(() =>
       Promise.reject(new QueuePublishError('publish_timeout', 'timeout')),
     );
@@ -104,13 +104,13 @@ describe('DispatchOutbox', () => {
     expect(publisher.calls).toHaveLength(1);
     expect(outbox.published).toEqual([]);
     expect(report.released).toBe(3);
-    expect(outbox.released.map((r) => r.id)).toEqual(['e1', 'e2', 'e3']);
+    expect(outbox.released.map((r) => r.id)).toEqual([1, 2, 3]);
     expect(outbox.released[0]?.error).toContain('publish_timeout');
     expect(outbox.released[0]?.retryAfterMs).toBe(1_000);
   });
 
   it('backs off re-publication with the dispatch count, bounded', async () => {
-    const outbox = new FakeOutbox([event('e1', 4), event('e2', 50)]);
+    const outbox = new FakeOutbox([event(1, 4), event(2, 50)]);
     const publisher = new FakePublisher(() =>
       Promise.reject(new QueuePublishError('queue_unavailable', 'down')),
     );
@@ -125,9 +125,9 @@ describe('DispatchOutbox', () => {
   });
 
   it('parks events of channels without a queue without blocking the others', async () => {
-    const outbox = new FakeOutbox([event('sms1', 1, 'sms'), event('e1')]);
+    const outbox = new FakeOutbox([event(11, 1, 'sms'), event(1)]);
     const publisher = new FakePublisher((jobId) =>
-      jobId.startsWith('dispatch-sms1')
+      jobId.startsWith('dispatch-11-')
         ? Promise.reject(new QueuePublishError('no_queue', 'none'))
         : Promise.resolve(),
     );
@@ -144,9 +144,9 @@ describe('DispatchOutbox', () => {
 
   it('records published events and publication failures by reason', async () => {
     const metrics = new RecordingMetrics();
-    const outbox = new FakeOutbox([event('ok'), event('down'), event('rest')]);
+    const outbox = new FakeOutbox([event(21), event(22), event(23)]);
     const publisher = new FakePublisher((jobId) =>
-      jobId.startsWith('dispatch-ok')
+      jobId.startsWith('dispatch-21-')
         ? Promise.resolve()
         : Promise.reject(new QueuePublishError('queue_unavailable', 'connection refused')),
     );
@@ -167,7 +167,7 @@ describe('DispatchOutbox', () => {
   });
 
   it('stops publishing when the outbox lease is nearly elapsed and releases the rest', async () => {
-    const outbox = new FakeOutbox([event('e1'), event('e2'), event('e3'), event('e4')]);
+    const outbox = new FakeOutbox([event(1), event(2), event(3), event(4)]);
     let clock = 0;
     // Each publication takes 10 s: with a 30 s lease and a 3 s publish timeout, the budget
     // (27 s) allows three publications to start (at 0, 10 and 20 s), not a fourth at 30 s.
@@ -186,10 +186,10 @@ describe('DispatchOutbox', () => {
     const report = await dispatcher.runOnce();
 
     expect(report).toEqual({ claimed: 4, published: 3, released: 0, ackLost: 0, yielded: 1 });
-    expect(outbox.published).toEqual(['e1', 'e2', 'e3']);
+    expect(outbox.published).toEqual([1, 2, 3]);
     expect(outbox.released).toEqual([
       {
-        id: 'e4',
+        id: 4,
         error: expect.stringContaining('batch_time_budget') as unknown,
         retryAfterMs: 0,
       },

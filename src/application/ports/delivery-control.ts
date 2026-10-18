@@ -10,10 +10,10 @@ import type { ClaimedDelivery } from './repositories.js';
  */
 
 export interface AttemptRecord {
-  attemptId: string;
+  attemptId: number;
   attemptNumber: number;
   generation: number;
-  providerInstanceId: string;
+  providerInstanceId: number;
   providerIdempotencyKey: string;
   outcome: AttemptOutcome;
   errorKind: ProviderErrorKind | null;
@@ -24,8 +24,8 @@ export interface AttemptRecord {
 }
 
 export interface UnknownDelivery {
-  tenantId: string;
-  deliveryId: string;
+  tenantId: number;
+  deliveryId: number;
   generation: number;
   version: number;
   attemptsUsed: number;
@@ -38,8 +38,8 @@ export interface UnknownDelivery {
 }
 
 export interface DeliveryTarget {
-  tenantId: string;
-  deliveryId: string;
+  tenantId: number;
+  deliveryId: number;
   channel: Channel;
   submissionStatus: SubmissionStatus;
   receiptStatus: ReceiptStatus;
@@ -48,7 +48,7 @@ export interface DeliveryTarget {
 
 export interface DeliveryControlRepository {
   /** Attempts of a delivery, oldest first. */
-  attemptHistory(tenantId: string, deliveryId: string): Promise<AttemptRecord[]>;
+  attemptHistory(tenantId: number, deliveryId: number): Promise<AttemptRecord[]>;
   /**
    * Reschedules a claimed, still runnable delivery without consuming an attempt (local quota,
    * limiter/breaker unavailable, no provider usable right now): releases the lease and makes the
@@ -64,7 +64,7 @@ export interface DeliveryControlRepository {
   /** `unknown` deliveries not checked for `minIntervalMs` (database clock), oldest check first. */
   findUnknown(minIntervalMs: number, limit: number): Promise<UnknownDelivery[]>;
   /** Records that reconciliation looked at the delivery (throttles the next check). */
-  touchUnknown(tenantId: string, deliveryId: string, version: number): Promise<boolean>;
+  touchUnknown(tenantId: number, deliveryId: number, version: number): Promise<boolean>;
   /**
    * `unknown` -> `accepted` on provider evidence (status query or webhook); the latest ambiguous
    * attempt (any generation) becomes `accepted`. Also applies to a delivery waiting in
@@ -73,8 +73,8 @@ export interface DeliveryControlRepository {
    * status-query results on `unknown` deliveries; webhooks pass null.
    */
   resolveUnknownAccepted(
-    tenantId: string,
-    deliveryId: string,
+    tenantId: number,
+    deliveryId: number,
     version: number | null,
     receiptStatus: ReceiptStatus,
     externalReference: string | null,
@@ -84,10 +84,10 @@ export interface DeliveryControlRepository {
    * attempt replays the ambiguous operation through the same provider with the same key.
    */
   scheduleSafeReplay(
-    tenantId: string,
-    deliveryId: string,
+    tenantId: number,
+    deliveryId: number,
     version: number,
     at: Date,
   ): Promise<boolean>;
-  findTarget(tenantId: string, deliveryId: string): Promise<DeliveryTarget | null>;
+  findTarget(tenantId: number, deliveryId: number): Promise<DeliveryTarget | null>;
 }

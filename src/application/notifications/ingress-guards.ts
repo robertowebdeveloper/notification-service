@@ -25,12 +25,12 @@ export class IngressLimiter {
   ) {}
 
   /** `subject` is the limited principal: a tenant id (API) or a provider instance id (webhooks). */
-  async check(subject: string): Promise<void> {
+  async check(subject: string | number): Promise<void> {
     if (this.limiter === null) return;
     let decision;
     try {
       decision = await this.limiter.consume(
-        this.keyPrefix + subject,
+        `${this.keyPrefix}${subject}`,
         this.settings.limit,
         this.settings.windowMs,
       );
@@ -66,11 +66,11 @@ export class FailureBudget {
   ) {}
 
   /** Throws 429 when `subject` already used its failure budget in the current window. */
-  async assertNotExhausted(subject: string): Promise<void> {
+  async assertNotExhausted(subject: string | number): Promise<void> {
     if (this.limiter?.peek === undefined) return;
     let decision;
     try {
-      decision = await this.limiter.peek(this.keyPrefix + subject, this.settings.limit);
+      decision = await this.limiter.peek(`${this.keyPrefix}${subject}`, this.settings.limit);
     } catch (err) {
       this.logger.warn(
         { err, scope: this.keyPrefix },
@@ -82,11 +82,11 @@ export class FailureBudget {
   }
 
   /** Counts one failure; `allowed` is false once the budget is exceeded. Never throws. */
-  async recordFailure(subject: string): Promise<RateLimitDecision> {
+  async recordFailure(subject: string | number): Promise<RateLimitDecision> {
     if (this.limiter === null) return { allowed: true, retryAfterMs: 0 };
     try {
       return await this.limiter.consume(
-        this.keyPrefix + subject,
+        `${this.keyPrefix}${subject}`,
         this.settings.limit,
         this.settings.windowMs,
       );

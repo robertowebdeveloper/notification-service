@@ -1,6 +1,6 @@
 # notification-service
 
-Microservizio asincrono di notifiche (email nel primo rilascio; SMS, push e messaggistica previsti nei contratti). Progetto: [docs/notification-service-design.md](docs/notification-service-design.md).
+Microservizio asincrono di notifiche (email nel primo rilascio; SMS, push e messaggistica previsti nei contratti). Progetto: [docs/notification-service-design.md](docs/notification-service-design.md); schema database: [docs/database-schema.md](docs/database-schema.md).
 
 ## Stato
 
@@ -48,7 +48,8 @@ npm run dev:api          # anche dev:worker, dev:dispatcher (tsx watch, legge .e
 
 ### API e configurazione
 
-- OpenAPI: `GET /v1/openapi.json`. Le route di business sono sotto `/v1`; `/health/live` e `/health/ready` non sono versionate.
+- OpenAPI: `GET /v1/openapi.json` (sempre attivo). Swagger UI: `http://localhost:3000/v1/docs`, attiva di default in local/test e disattivata in stage/production (`API_DOCS_ENABLED`). Le route di business sono sotto `/v1`; `/health/live` e `/health/ready` non sono versionate.
+- Id delle risorse: interi positivi assegnati da PostgreSQL (`bigint` identity), nel JSON come numeri; vedi [docs/database-schema.md](docs/database-schema.md).
 - Autenticazione: `Authorization: Bearer ns_<prefisso>_<segreto>`; nel DB è salvato solo l'hash SHA-256.
 - Tenant, chiavi API, istanze provider e policy: `npm run config:apply -- --file config/local.example.json`. Idempotente; le chiavi nuove sono stampate una sola volta, quelle esistenti non vengono ruotate. In stage e produzione rifiuta le istanze con profilo `local`.
 - In `config/local.example.json` l'host SMTP è `mailpit` (rete Compose); per un worker avviato sull'host usare `localhost`. Nello stack Docker locale: `docker compose run --rm config-apply`.

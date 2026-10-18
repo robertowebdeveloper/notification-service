@@ -9,9 +9,9 @@ import { parseApiKey, verifyApiKey } from '../../infrastructure/security/api-key
 import { sendError } from '../errors.js';
 
 export interface AuthContext {
-  apiKeyId: string;
+  apiKeyId: number;
   /** Always derived from the API key, never from the request. */
-  tenantId: string;
+  tenantId: number;
   scopes: readonly ApiScope[];
 }
 
@@ -44,9 +44,9 @@ export function createAuthenticator(
   now: () => Date = () => new Date(),
   guards: AuthenticatorGuards = {},
 ): Authenticator {
-  const lastTouched = new Map<string, number>();
+  const lastTouched = new Map<number, number>();
 
-  function touch(request: FastifyRequest, apiKeyId: string, at: Date): void {
+  function touch(request: FastifyRequest, apiKeyId: number, at: Date): void {
     const previous = lastTouched.get(apiKeyId) ?? 0;
     if (at.getTime() - previous < TOUCH_INTERVAL_MS) return;
     lastTouched.set(apiKeyId, at.getTime());

@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { MikroORM } from '@mikro-orm/postgresql';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PgNotificationRepository } from '../../../src/infrastructure/database/notification-repository.js';
@@ -118,11 +117,25 @@ describe('database schema', () => {
     await expect(
       queryRows(
         orm,
-        `insert into deliveries (id, tenant_id, notification_id, channel, recipient, max_attempts, expires_at)
-         values (?, ?, ?, 'email', 'x@example.test', 1, now())`,
-        [randomUUID(), other.tenantId, created.notificationId],
+        `insert into deliveries (tenant_id, notification_id, channel, recipient, max_attempts, expires_at)
+         values (?, ?, 'email', 'x@example.test', 1, now())`,
+        [other.tenantId, created.notificationId],
       ),
     ).rejects.toThrow(/deliveries_notification_foreign/);
+  });
+
+  it('assigns ids from identity columns and refuses explicit ones', async () => {
+    const first = await createTenantFixture(orm);
+    const second = await createTenantFixture(orm);
+    expect(Number.isSafeInteger(first.tenantId) && first.tenantId > 0).toBe(true);
+    expect(second.tenantId).toBeGreaterThan(first.tenantId);
+
+    await expect(
+      queryRows(orm, `insert into tenants (id, slug, name) values (?, ?, 'Explicit id')`, [
+        second.tenantId + 1000,
+        `explicit-${second.tenantId}`,
+      ]),
+    ).rejects.toThrow(/generated always/i);
   });
 
   it('rejects routing a policy to a provider instance of another tenant', async () => {

@@ -52,11 +52,11 @@ export interface TenantSpec {
 
 export interface SeededTenant {
   slug: string;
-  tenantId: string;
+  tenantId: number;
   /** Plain API keys by key name (printed once by config:apply). */
   apiKeys: Record<string, string>;
   /** Provider instance ids by instance name. */
-  providerInstanceIds: Record<string, string>;
+  providerInstanceIds: Record<string, number>;
   /** The first API key of the spec. */
   apiKey: string;
 }
@@ -192,11 +192,11 @@ export class ConfigApplySeeder implements TenantSeeder {
   }
 
   private async lookup(spec: TenantSpec, apiKeys: Record<string, string>): Promise<SeededTenant> {
-    const tenant = await this.db.one<{ id: string }>('select id from tenants where slug = ?', [
+    const tenant = await this.db.one<{ id: number }>('select id from tenants where slug = ?', [
       spec.slug,
     ]);
     if (tenant === undefined) throw new Error(`config:apply did not create tenant ${spec.slug}`);
-    const instances = await this.db.query<{ id: string; name: string }>(
+    const instances = await this.db.query<{ id: number; name: string }>(
       'select id, name from provider_instances where tenant_id = ?',
       [tenant.id],
     );

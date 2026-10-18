@@ -9,6 +9,8 @@ import {
   LIMITS,
   ListNotificationsQuery,
   NotificationView,
+  parseResourceId,
+  ResourceIdParam,
   RetryNotificationResponse,
   ROUTES,
   API_VERSION_PREFIX,
@@ -31,7 +33,7 @@ export interface NotificationRoutesOptions {
 
 const security = [{ bearerAuth: [] }];
 const tags = ['notifications'];
-const IdParams = Type.Object({ id: Type.String({ format: 'uuid' }) });
+const IdParams = Type.Object({ id: ResourceIdParam });
 
 const errors = (...statuses: number[]) =>
   Object.fromEntries(statuses.map((s) => [s, { ...ErrorBody, description: 'Error' }]));
@@ -61,7 +63,7 @@ function recordOutcome(metrics: Metrics, operation: ApiOperation) {
   };
 }
 
-function locationOf(id: string): string {
+function locationOf(id: number): string {
   return `${API_VERSION_PREFIX}/notifications/${id}`;
 }
 
@@ -117,7 +119,7 @@ export const notificationRoutes: FastifyPluginAsyncTypebox<NotificationRoutesOpt
     },
     async (request) => {
       const auth = authOf(request);
-      return opts.queryNotifications.get(auth.tenantId, request.params.id);
+      return opts.queryNotifications.get(auth.tenantId, parseResourceId(request.params.id));
     },
   );
 
@@ -173,7 +175,7 @@ export const notificationRoutes: FastifyPluginAsyncTypebox<NotificationRoutesOpt
       const outcome = await opts.retryNotification.execute({
         tenantId: auth.tenantId,
         apiKeyId: auth.apiKeyId,
-        notificationId: request.params.id,
+        notificationId: parseResourceId(request.params.id),
         idempotencyKey: request.headers['idempotency-key'],
       });
       if (outcome.replayed) void reply.header('idempotent-replayed', 'true');

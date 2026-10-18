@@ -1,5 +1,4 @@
 import type { QueryResult } from '@mikro-orm/core';
-import { randomUUID } from 'node:crypto';
 import type { ChannelPayload } from '../../contracts/channels.js';
 import type { SubmissionStatus } from '../../contracts/statuses.js';
 import type {
@@ -12,11 +11,13 @@ import type {
 import {
   FencingRollback,
   forkEm,
+  isId,
   isUniqueViolation,
   isUuid,
   num,
   str,
   toDate,
+  toId,
   type Orm,
   type Row,
 } from './sql-support.js';
@@ -41,11 +42,11 @@ export class PgDeliveryRepository implements DeliveryRepository {
   constructor(private readonly orm: Orm) {}
 
   async claim(
-    deliveryId: string,
+    deliveryId: number,
     generation: number,
     leaseMs: number,
   ): Promise<ClaimedDelivery | null> {
-    if (!isUuid(deliveryId)) return null;
+    if (!isId(deliveryId)) return null;
     const em = forkEm(this.orm);
     // Accepted/terminal/sending deliveries, other generations and deliveries not yet due (a
     // duplicate job published before a deferral) never match. Database clock only.
@@ -70,9 +71,9 @@ export class PgDeliveryRepository implements DeliveryRepository {
     if (!row) return null;
     const snapshot = row.routing_snapshot as RoutingSnapshot;
     return {
-      deliveryId: str(row.id),
-      tenantId: str(row.tenant_id),
-      notificationId: str(row.notification_id),
+      deliveryId: toId(row.id),
+      tenantId: toId(row.tenant_id),
+      notificationId: toId(row.notification_id),
       generation: num(row.generation),
       version: num(row.version),
       leaseToken: str(row.lease_token),
@@ -86,12 +87,12 @@ export class PgDeliveryRepository implements DeliveryRepository {
   }
 
   async renewLease(
-    deliveryId: string,
+    deliveryId: number,
     leaseToken: string,
     version: number,
     leaseMs: number,
   ): Promise<boolean> {
-    if (!isUuid(deliveryId) || !isUuid(leaseToken)) return false;
+    if (!isId(deliveryId) || !isUuid(leaseToken)) return false;
     const em = forkEm(this.orm);
     const result = await em.execute<QueryResult>(
       `update deliveries
@@ -104,7 +105,7 @@ export class PgDeliveryRepository implements DeliveryRepository {
     return result.affectedRows === 1;
   }
 
-  async startAttempt(claim: ClaimedDelivery, attempt: AttemptStart): Promise<boolean> {
+  async startAttempt(claim: ClaimedDelivery, attempt: AttemptStart): Promise<number | null> {
     const em = forkEm(this.orm);
     try {
       return await em.transactional(async (tx) => {
@@ -120,13 +121,13 @@ export class PgDeliveryRepository implements DeliveryRepository {
           'run',
         );
         if (updated.affectedRows !== 1) throw new FencingRollback();
-        await tx.execute(
+        const inserted = await tx.execute<Row[]>(
           `insert into delivery_attempts
-             (id, tenant_id, delivery_id, attempt_number, generation, provider_instance_id,
+             (tenant_id, delivery_id, attempt_number, generation, provider_instance_id,
               provider_instance_revision, provider_idempotency_key, outcome, started_at)
-           values (?, ?, ?, ?, ?, ?, ?, ?, 'started', now())`,
+           values (?, ?, ?, ?, ?, ?, ?, 'started', now())
+           returning id`,
           [
-            attempt.attemptId,
             claim.tenantId,
             claim.deliveryId,
             attempt.attemptNumber,
@@ -136,20 +137,20 @@ export class PgDeliveryRepository implements DeliveryRepository {
             attempt.providerIdempotencyKey,
           ],
         );
-        return true;
+        return toId(inserted[0]?.id);
       });
     } catch (error) {
-      if (error instanceof FencingRollback || isUniqueViolation(error)) return false;
+      if (error instanceof FencingRollback || isUniqueViolation(error)) return null;
       throw error;
     }
   }
 
   async resolveAttempt(
     claim: ClaimedDelivery,
-    attemptId: string,
+    attemptId: number,
     resolution: AttemptResolution,
   ): Promise<boolean> {
-    if (!isUuid(attemptId)) return false;
+    if (!isId(attemptId)) return false;
     const em = forkEm(this.orm);
     try {
       return await em.transactional(async (tx) => {
@@ -247,9 +248,9 @@ export class PgDeliveryRepository implements DeliveryRepository {
           if (row && str(row.submission_status) === 'retry_wait') {
             await tx.execute(
               `insert into outbox_events
-                 (id, tenant_id, delivery_id, generation, event_type, status, available_at)
-               values (?, ?, ?, ?, 'dispatch_delivery', 'pending', ?)`,
-              [randomUUID(), claim.tenantId, claim.deliveryId, num(row.generation), retryAt],
+                 (tenant_id, delivery_id, generation, event_type, status, available_at)
+               values (?, ?, ?, 'dispatch_delivery', 'pending', ?)`,
+              [claim.tenantId, claim.deliveryId, num(row.generation), retryAt],
             );
           }
         }

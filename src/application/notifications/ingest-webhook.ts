@@ -52,7 +52,7 @@ export interface IngestWebhookDeps {
 
 export interface IngestWebhookCommand {
   providerType: string;
-  instanceId: string;
+  instanceId: number;
   rawBody: Buffer;
   headers: Readonly<Record<string, string | string[] | undefined>>;
   /** Client address as seen by the HTTP layer (honours HTTP_TRUST_PROXY). */

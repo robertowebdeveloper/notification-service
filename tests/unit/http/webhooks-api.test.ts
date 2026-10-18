@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { signSvixPayload } from '../../../src/infrastructure/providers/email/resend-webhook.js';
 import type { ProviderInstanceRecord } from '../../../src/application/ports/lookup-repositories.js';
-import { buildTestApi, instance, WEBHOOK_SECRET, type TestApi } from './support/fakes.js';
+import { buildTestApi, instance, nextId, WEBHOOK_SECRET, type TestApi } from './support/fakes.js';
 
 function signedRequest(body: string, id = `msg_${randomUUID()}`, secret = WEBHOOK_SECRET) {
   const timestamp = String(Math.floor(Date.now() / 1000));
@@ -26,7 +26,7 @@ describe('provider webhooks', () => {
 
   beforeEach(async () => {
     api = await buildTestApi();
-    const tenantId = randomUUID();
+    const tenantId = nextId();
     resend = instance(tenantId, {
       providerType: 'resend',
       name: 'resend-main',
@@ -85,9 +85,7 @@ describe('provider webhooks', () => {
 
   it('returns 404 for unknown instances, provider types or adapters without webhooks', async () => {
     const headers = signedRequest(EVENT);
-    expect((await send(EVENT, headers, `/v1/webhooks/resend/${randomUUID()}`)).statusCode).toBe(
-      404,
-    );
+    expect((await send(EVENT, headers, `/v1/webhooks/resend/${nextId()}`)).statusCode).toBe(404);
     expect((await send(EVENT, headers, `/v1/webhooks/unknown/${resend.id}`)).statusCode).toBe(404);
     const smtp = instance(resend.tenantId);
     api.providerConfig.instances.push(smtp);

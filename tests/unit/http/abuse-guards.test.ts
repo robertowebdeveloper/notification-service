@@ -22,6 +22,7 @@ import {
   FakeProviderEvents,
   FakeSenderPolicy,
   instance,
+  nextId,
   WEBHOOK_SECRET,
 } from './support/fakes.js';
 
@@ -102,7 +103,7 @@ describe('sender allow-list bypass attempts over HTTP', () => {
     'evil@attacker.test <orders@example.test>',
   ])('rejects %j with 400 and stores nothing', async (from) => {
     const h = await harness();
-    const tenantId = randomUUID();
+    const tenantId = nextId();
     const key = h.apiKeys.add(tenantId, [...ALL]);
     h.providerConfig.addPolicy(tenantId, [instance(tenantId)]);
     const res = await h.app.inject({
@@ -123,13 +124,13 @@ describe('per-IP budget of failed authentications', () => {
 
   beforeEach(async () => {
     h = await harness();
-    key = h.apiKeys.add(randomUUID(), [...ALL]);
+    key = h.apiKeys.add(nextId(), [...ALL]);
   });
 
   const get = (bearer: string | undefined, remoteAddress = '10.0.0.1') =>
     h.app.inject({
       method: 'GET',
-      url: `/v1/notifications/${randomUUID()}`,
+      url: `/v1/notifications/${nextId()}`,
       remoteAddress,
       headers: bearer === undefined ? {} : { authorization: `Bearer ${bearer}` },
     });
@@ -163,7 +164,7 @@ describe('per-IP budget of failed authentications', () => {
 describe('per-tenant read limit', () => {
   it('limits GET routes per tenant without touching the write budget', async () => {
     const h = await harness();
-    const tenantId = randomUUID();
+    const tenantId = nextId();
     const key = h.apiKeys.add(tenantId, [...ALL]);
     h.providerConfig.addPolicy(tenantId, [instance(tenantId)]);
     const read = () =>
@@ -208,11 +209,11 @@ describe('webhook budgets', () => {
   const FORGED = 'whsec_' + Buffer.from('attacker-secret').toString('base64');
 
   let h: Harness;
-  let instanceId: string;
+  let instanceId: number;
 
   beforeEach(async () => {
     h = await harness();
-    const resend = instance(randomUUID(), {
+    const resend = instance(nextId(), {
       providerType: 'resend',
       config: {},
       secretRef: 'env:RESEND_TEST',
@@ -254,7 +255,7 @@ describe('webhook budgets', () => {
 
   it('sheds an IP that keeps failing before any lookup, without affecting the provider', async () => {
     for (let i = 0; i < 4; i += 1) {
-      const res = await post(signed(), '203.0.113.9', randomUUID());
+      const res = await post(signed(), '203.0.113.9', nextId());
       expect(res.statusCode).toBe(404);
     }
     expect((await post(signed(), '203.0.113.9')).statusCode).toBe(429);
@@ -265,7 +266,7 @@ describe('webhook budgets', () => {
 describe('HTTP processing timeout', () => {
   it('answers 503 dependency_unavailable when a request hangs', async () => {
     const h = await harness({ handlerTimeoutMs: 200, requestTimeoutMs: 1_000 });
-    const key = h.apiKeys.add(randomUUID(), [...ALL]);
+    const key = h.apiKeys.add(nextId(), [...ALL]);
     h.apiKeys.hang = true;
     const res = await h.app.inject({
       method: 'GET',

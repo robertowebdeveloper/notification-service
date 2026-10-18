@@ -1,5 +1,4 @@
 import { readFile } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { applyConfig } from '../../../../src/application/admin/apply-config.js';
 import { ConfigFileError, parseConfigFile } from '../../../../src/application/admin/config-file.js';
@@ -15,15 +14,21 @@ import { generateApiKey } from '../../../../src/infrastructure/security/api-keys
 
 /** In-memory admin repository with the same "changed only when different" semantics. */
 class FakeAdmin implements AdminConfigRepository {
-  tenants = new Map<string, { id: string; value: string }>();
-  keys = new Map<string, { id: string; value: ApiKeyConfig }>();
-  instances = new Map<string, { id: string; value: string }>();
-  policies = new Map<string, { id: string; value: string; version: number }>();
+  tenants = new Map<string, { id: number; value: string }>();
+  keys = new Map<string, { id: number; value: ApiKeyConfig }>();
+  instances = new Map<string, { id: number; value: string }>();
+  policies = new Map<string, { id: number; value: string; version: number }>();
 
-  private upsert(map: Map<string, { id: string; value: string }>, key: string, value: string) {
+  private lastId = 0;
+  private nextId(): number {
+    this.lastId += 1;
+    return this.lastId;
+  }
+
+  private upsert(map: Map<string, { id: number; value: string }>, key: string, value: string) {
     const existing = map.get(key);
     if (existing?.value === value) return Promise.resolve({ id: existing.id, changed: false });
-    const id = existing?.id ?? randomUUID();
+    const id = existing?.id ?? this.nextId();
     map.set(key, { id, value });
     return Promise.resolve({ id, changed: true });
   }
@@ -31,26 +36,26 @@ class FakeAdmin implements AdminConfigRepository {
   upsertTenant(_actor: string, tenant: TenantConfig) {
     return this.upsert(this.tenants, tenant.slug, JSON.stringify(tenant));
   }
-  upsertApiKey(_actor: string, tenantId: string, key: ApiKeyConfig) {
+  upsertApiKey(_actor: string, tenantId: number, key: ApiKeyConfig) {
     const existing = this.keys.get(`${tenantId}|${key.name}`);
     if (existing && JSON.stringify(existing.value) === JSON.stringify(key)) {
       return Promise.resolve({ id: existing.id, changed: false });
     }
-    const id = existing?.id ?? randomUUID();
+    const id = existing?.id ?? this.nextId();
     this.keys.set(`${tenantId}|${key.name}`, { id, value: key });
     return Promise.resolve({ id, changed: true });
   }
-  upsertProviderInstance(_actor: string, tenantId: string, instance: ProviderInstanceConfig) {
+  upsertProviderInstance(_actor: string, tenantId: number, instance: ProviderInstanceConfig) {
     return this.upsert(this.instances, `${tenantId}|${instance.name}`, JSON.stringify(instance));
   }
-  publishRoutingPolicy(_actor: string, tenantId: string, policy: RoutingPolicyConfig) {
+  publishRoutingPolicy(_actor: string, tenantId: number, policy: RoutingPolicyConfig) {
     const key = `${tenantId}|${policy.routingKey}|${policy.channel}`;
     const existing = this.policies.get(key);
     const value = JSON.stringify(policy);
     if (existing?.value === value) {
       return Promise.resolve({ id: existing.id, changed: false, version: existing.version });
     }
-    const next = { id: randomUUID(), value, version: (existing?.version ?? 0) + 1 };
+    const next = { id: this.nextId(), value, version: (existing?.version ?? 0) + 1 };
     this.policies.set(key, next);
     return Promise.resolve({ id: next.id, changed: true, version: next.version });
   }
@@ -60,7 +65,7 @@ function deps(admin: FakeAdmin, appEnv = 'local') {
   return {
     admin,
     apiKeys: {
-      findByName: (tenantId: string, name: string) =>
+      findByName: (tenantId: number, name: string) =>
         Promise.resolve(admin.keys.get(`${tenantId}|${name}`)?.value ?? null),
     },
     providers: createEmailProviderRegistry(),
@@ -263,7 +268,7 @@ describe('config:apply safety', () => {
           throw error;
         }
       }
-      override publishRoutingPolicy(actor: string, tenantId: string, policy: RoutingPolicyConfig) {
+      override publishRoutingPolicy(actor: string, tenantId: number, policy: RoutingPolicyConfig) {
         if (this.failPolicies) return Promise.reject(new Error('injected failure'));
         return super.publishRoutingPolicy(actor, tenantId, policy);
       }
@@ -283,7 +288,7 @@ describe('config:apply safety', () => {
 
   it('does not report a generated key that another run inserted first', async () => {
     class RacingAdmin extends FakeAdmin {
-      override async upsertApiKey(actor: string, tenantId: string, key: ApiKeyConfig) {
+      override async upsertApiKey(actor: string, tenantId: number, key: ApiKeyConfig) {
         const outcome = await super.upsertApiKey(actor, tenantId, key);
         return { ...outcome, created: false };
       }

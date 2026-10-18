@@ -48,39 +48,48 @@ export async function closeOrm(): Promise<void> {
 }
 
 export interface TenantFixture {
-  tenantId: string;
-  providerInstanceId: string;
-  routingPolicyId: string;
+  tenantId: number;
+  providerInstanceId: number;
+  routingPolicyId: number;
+}
+
+/** Id returned by an `insert ... returning id`. */
+export function insertedId(rows: Record<string, unknown>[]): number {
+  const id = rows[0]?.id;
+  if (typeof id !== 'number') throw new Error('insert returned no id');
+  return id;
 }
 
 export async function createTenantFixture(orm: MikroORM): Promise<TenantFixture> {
   const em = orm.em.fork();
-  const tenantId = randomUUID();
-  const providerInstanceId = randomUUID();
-  const routingPolicyId = randomUUID();
-  await em.transactional(async (tx) => {
-    await tx.execute(`insert into tenants (id, slug, name) values (?, ?, ?)`, [
-      tenantId,
-      `tenant-${tenantId}`,
-      'Test tenant',
-    ]);
-    await tx.execute(
-      `insert into provider_instances (id, tenant_id, name, provider_type, channel, config, secret_ref)
-       values (?, ?, 'smtp-main', 'smtp', 'email', ?::jsonb, 'smtp-main')`,
-      [providerInstanceId, tenantId, JSON.stringify({ host: 'localhost', port: 1025 })],
+  return em.transactional(async (tx) => {
+    const tenantId = insertedId(
+      await tx.execute(`insert into tenants (slug, name) values (?, ?) returning id`, [
+        `tenant-${randomUUID()}`,
+        'Test tenant',
+      ]),
     );
-    await tx.execute(
-      `insert into routing_policies (id, tenant_id, routing_key, channel, version, max_attempts)
-       values (?, ?, 'transactional', 'email', 1, 3)`,
-      [routingPolicyId, tenantId],
+    const providerInstanceId = insertedId(
+      await tx.execute(
+        `insert into provider_instances (tenant_id, name, provider_type, channel, config, secret_ref)
+         values (?, 'smtp-main', 'smtp', 'email', ?::jsonb, 'smtp-main') returning id`,
+        [tenantId, JSON.stringify({ host: 'localhost', port: 1025 })],
+      ),
+    );
+    const routingPolicyId = insertedId(
+      await tx.execute(
+        `insert into routing_policies (tenant_id, routing_key, channel, version, max_attempts)
+         values (?, 'transactional', 'email', 1, 3) returning id`,
+        [tenantId],
+      ),
     );
     await tx.execute(
       `insert into routing_policy_providers (routing_policy_id, position, tenant_id, provider_instance_id)
        values (?, 0, ?, ?)`,
       [routingPolicyId, tenantId, providerInstanceId],
     );
+    return { tenantId, providerInstanceId, routingPolicyId };
   });
-  return { tenantId, providerInstanceId, routingPolicyId };
 }
 
 export function notificationInput(
@@ -129,11 +138,11 @@ export async function queryRows(
 }
 
 /** Delivery id of a notification created through the repository. */
-export async function deliveryIdOf(orm: MikroORM, notificationId: string): Promise<string> {
+export async function deliveryIdOf(orm: MikroORM, notificationId: number): Promise<number> {
   const found = await queryRows(orm, `select id from deliveries where notification_id = ?`, [
     notificationId,
   ]);
   const id = found[0]?.id;
-  if (typeof id !== 'string') throw new Error('delivery not found');
+  if (typeof id !== 'number') throw new Error('delivery not found');
   return id;
 }

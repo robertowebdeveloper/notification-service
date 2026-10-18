@@ -6,18 +6,19 @@ import {
   buildTestApi,
   emailBody,
   instance,
+  nextId,
   WEBHOOK_SECRET,
   type TestApi,
 } from './support/fakes.js';
 
 describe('API metrics', () => {
   let api: TestApi;
-  let tenantId: string;
+  let tenantId: number;
   let key: string;
 
   beforeEach(async () => {
     api = await buildTestApi();
-    tenantId = randomUUID();
+    tenantId = nextId();
     key = api.apiKeys.add(tenantId, ['notifications:write', 'notifications:retry']);
     api.providerConfig.addPolicy(tenantId, [instance(tenantId)]);
   });
@@ -65,8 +66,8 @@ describe('API metrics', () => {
   });
 
   it('records manual retries under their own operation', async () => {
-    const created = (await post(emailBody())).json<{ id: string }>();
-    const retry = (id: string) =>
+    const created = (await post(emailBody())).json<{ id: number }>();
+    const retry = (id: number) =>
       api.app.inject({
         method: 'POST',
         url: `/v1/notifications/${id}/retry`,
@@ -117,7 +118,7 @@ describe('webhook metrics', () => {
 
   beforeEach(async () => {
     api = await buildTestApi();
-    resend = instance(randomUUID(), {
+    resend = instance(nextId(), {
       providerType: 'resend',
       name: 'resend-main',
       config: {},
@@ -130,7 +131,7 @@ describe('webhook metrics', () => {
     expect((await send(`/v1/webhooks/resend/${resend.id}`)).statusCode).toBe(200);
     const forged = headers('whsec_' + Buffer.from('wrong-secret').toString('base64'));
     expect((await send(`/v1/webhooks/resend/${resend.id}`, forged)).statusCode).toBe(401);
-    expect((await send(`/v1/webhooks/resend/${randomUUID()}`)).statusCode).toBe(404);
+    expect((await send(`/v1/webhooks/resend/${nextId()}`)).statusCode).toBe(404);
     resend.secretRef = 'env:MISSING_PREFIX';
     expect((await send(`/v1/webhooks/resend/${resend.id}`)).statusCode).toBe(503);
 

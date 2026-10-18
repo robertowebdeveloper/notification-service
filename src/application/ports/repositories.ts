@@ -10,19 +10,19 @@ import type { ReceiptStatus, SubmissionStatus } from '../../contracts/statuses.j
  */
 
 export interface RoutingSnapshot {
-  policyId: string;
+  policyId: number;
   policyVersion: number;
   /** Channel platform (push/messaging); null for email and sms. */
   platform: string | null;
   /** Ordered provider instance ids considered for this delivery. */
-  providerInstanceIds: string[];
+  providerInstanceIds: number[];
   maxAttempts: number;
   /** Policy flag: when false only the first instance may be used (no fallback). */
   fallbackEnabled: boolean;
 }
 
 export interface CreateNotificationInput {
-  tenantId: string;
+  tenantId: number;
   idempotencyKey: string;
   requestHash: string;
   routingKey: string;
@@ -33,12 +33,12 @@ export interface CreateNotificationInput {
 }
 
 export type CreateNotificationResult =
-  | { kind: 'created'; notificationId: string }
-  | { kind: 'replayed'; notificationId: string }
+  | { kind: 'created'; notificationId: number }
+  | { kind: 'replayed'; notificationId: number }
   | { kind: 'conflict' };
 
 export interface NotificationSummary {
-  id: string;
+  id: number;
   channel: Channel;
   /** Channel platform from the routing snapshot (push/messaging); null for email and sms. */
   platform: string | null;
@@ -73,7 +73,7 @@ export interface ListNotificationsFilter {
 
 /** Stored idempotency record of a notification (tenant-scoped key). */
 export interface IdempotencyRecord {
-  notificationId: string;
+  notificationId: number;
   requestHash: string;
 }
 
@@ -84,10 +84,10 @@ export interface NotificationRepository {
    * Read-only lookup used to answer replays before routing. `create` stays the source of truth
    * for concurrent identical requests (insert-level idempotency).
    */
-  findByIdempotencyKey(tenantId: string, idempotencyKey: string): Promise<IdempotencyRecord | null>;
-  findById(tenantId: string, id: string): Promise<NotificationDetail | null>;
+  findByIdempotencyKey(tenantId: number, idempotencyKey: string): Promise<IdempotencyRecord | null>;
+  findById(tenantId: number, id: number): Promise<NotificationDetail | null>;
   list(
-    tenantId: string,
+    tenantId: number,
     filter: ListNotificationsFilter,
   ): Promise<{ items: NotificationSummary[]; nextCursor: string | null }>;
   /** Outbox events due for publication and not yet published (future events excluded). */
@@ -95,8 +95,8 @@ export interface NotificationRepository {
 }
 
 export interface ClaimedOutboxEvent {
-  id: string;
-  deliveryId: string;
+  id: number;
+  deliveryId: number;
   generation: number;
   channel: Channel;
   dispatchCount: number;
@@ -105,8 +105,8 @@ export interface ClaimedOutboxEvent {
 
 /** A published event whose job may have been lost (see `findLostPublications`). */
 export interface LostPublicationCandidate {
-  id: string;
-  deliveryId: string;
+  id: number;
+  deliveryId: number;
   channel: Channel;
   /** Dispatch count of the last publication: its job id is `dispatch-<id>-<dispatchCount>`. */
   dispatchCount: number;
@@ -119,10 +119,10 @@ export interface LostPublicationCandidate {
 export interface OutboxRepository {
   /** SELECT ... FOR UPDATE SKIP LOCKED, sets lease and increments dispatch_count. */
   claimAvailable(limit: number, leaseMs: number): Promise<ClaimedOutboxEvent[]>;
-  markPublished(id: string, leaseToken: string): Promise<boolean>;
+  markPublished(id: number, leaseToken: string): Promise<boolean>;
   /** Back to 'pending', publishable again `retryAfterMs` from now (0: immediately). */
   releaseAfterError(
-    id: string,
+    id: number,
     leaseToken: string,
     technicalError: string,
     retryAfterMs: number,
@@ -140,9 +140,9 @@ export interface OutboxRepository {
 }
 
 export interface ClaimedDelivery {
-  deliveryId: string;
-  tenantId: string;
-  notificationId: string;
+  deliveryId: number;
+  tenantId: number;
+  notificationId: number;
   generation: number;
   /** Fencing token: incremented on every claim. */
   version: number;
@@ -156,9 +156,8 @@ export interface ClaimedDelivery {
 }
 
 export interface AttemptStart {
-  attemptId: string;
   attemptNumber: number;
-  providerInstanceId: string;
+  providerInstanceId: number;
   providerInstanceRevision: number;
   providerIdempotencyKey: string;
 }
@@ -177,15 +176,18 @@ export interface DeliveryRepository {
    * Atomic conditional update on status, generation, lease and `next_attempt_at` (a duplicate
    * job can never skip a deferral); returns null for stale or not yet due jobs.
    */
-  claim(deliveryId: string, generation: number, leaseMs: number): Promise<ClaimedDelivery | null>;
+  claim(deliveryId: number, generation: number, leaseMs: number): Promise<ClaimedDelivery | null>;
   renewLease(
-    deliveryId: string,
+    deliveryId: number,
     leaseToken: string,
     version: number,
     leaseMs: number,
   ): Promise<boolean>;
-  /** Persists attempt 'started' and delivery 'sending' before the provider call. */
-  startAttempt(claim: ClaimedDelivery, attempt: AttemptStart): Promise<boolean>;
+  /**
+   * Persists attempt 'started' and delivery 'sending' before the provider call; returns the new
+   * attempt id, or null when fenced out.
+   */
+  startAttempt(claim: ClaimedDelivery, attempt: AttemptStart): Promise<number | null>;
   /**
    * Fenced by version/lease; retry creates next generation + outbox event in the same
    * transaction. Locks the delivery row before the attempt row (same order as every other
@@ -193,7 +195,7 @@ export interface DeliveryRepository {
    */
   resolveAttempt(
     claim: ClaimedDelivery,
-    attemptId: string,
+    attemptId: number,
     resolution: AttemptResolution,
   ): Promise<boolean>;
   markTerminal(
@@ -206,12 +208,12 @@ export interface DeliveryRepository {
 }
 
 export interface ManualRetryInput {
-  tenantId: string;
-  notificationId: string;
+  tenantId: number;
+  notificationId: number;
   /** Idempotency-Key of the retry request, scoped to tenant + notification. */
   retryIdempotencyKey: string;
   /** API key id performing the operation (recorded in audit_events). */
-  actorApiKeyId: string;
+  actorApiKeyId: number;
   /** New attempt budget granted by this retry. */
   maxAttempts: number;
   now: Date;

@@ -29,7 +29,7 @@ export type RateLimitDecision = { allowed: true } | { allowed: false; retryAfter
  * implementation applies its configured default. Throws when the limiter backend is unavailable.
  */
 export interface ProviderRateLimiter {
-  tryAcquire(providerInstanceId: string, limit?: SendRateLimit): Promise<RateLimitDecision>;
+  tryAcquire(providerInstanceId: number, limit?: SendRateLimit): Promise<RateLimitDecision>;
 }
 
 /**
@@ -43,21 +43,21 @@ export type BreakerPermit =
 
 /** Shared circuit breaker per provider instance. Throws when the backend is unavailable. */
 export interface ProviderCircuitBreaker {
-  acquire(providerInstanceId: string): Promise<BreakerPermit>;
+  acquire(providerInstanceId: number): Promise<BreakerPermit>;
   /**
    * The provider answered (accepted, or a definite non-retryable rejection). In half-open state
    * only the probe holder (`probeToken`) closes the breaker; other successes are ignored.
    */
-  recordSuccess(providerInstanceId: string, probeToken?: string): Promise<void>;
+  recordSuccess(providerInstanceId: number, probeToken?: string): Promise<void>;
   /** `settings` are the instance overrides; missing fields use the configured defaults. */
-  recordFailure(providerInstanceId: string, settings?: CircuitBreakerSettings): Promise<void>;
+  recordFailure(providerInstanceId: number, settings?: CircuitBreakerSettings): Promise<void>;
   /** Opens the breaker for `durationMs` (operational quarantine after a configuration error). */
-  forceOpen(providerInstanceId: string, durationMs: number): Promise<void>;
+  forceOpen(providerInstanceId: number, durationMs: number): Promise<void>;
   /**
    * Gives back a half-open probe that will not be used (delivery deferred, claim fenced before
    * the send), so the next caller can probe immediately instead of waiting for the probe TTL.
    */
-  releaseProbe(providerInstanceId: string, probeToken: string): Promise<void>;
+  releaseProbe(providerInstanceId: number, probeToken: string): Promise<void>;
 }
 
 // ---------------------------------------------------------------- Queue

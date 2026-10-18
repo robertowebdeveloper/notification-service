@@ -1,4 +1,7 @@
-import { randomUUID } from 'node:crypto';
+import { randomInt } from 'node:crypto';
+
+/** Unique provider instance id per test (keys are shared in Valkey). */
+const anyInstanceId = () => randomInt(1, 2 ** 47);
 import type { Redis } from 'ioredis';
 import { afterAll, describe, expect, it } from 'vitest';
 import { ValkeyCircuitBreaker } from '../../../src/infrastructure/queue/circuit-breaker.js';
@@ -33,7 +36,7 @@ describe('ValkeyTokenBucketRateLimiter', () => {
     const limit = { burst: 3, perSecond: 0.01 };
     const a = new ValkeyTokenBucketRateLimiter(await connect(), { prefix, defaultLimit: limit });
     const b = new ValkeyTokenBucketRateLimiter(await connect(), { prefix, defaultLimit: limit });
-    const instance = randomUUID();
+    const instance = anyInstanceId();
 
     const decisions = await Promise.all(
       Array.from({ length: 8 }, (_, i) => (i % 2 === 0 ? a : b).tryAcquire(instance)),
@@ -44,7 +47,7 @@ describe('ValkeyTokenBucketRateLimiter', () => {
     expect(denied?.allowed === false ? denied.retryAfterMs : 0).toBeGreaterThan(1_000);
 
     // Other instances have their own bucket.
-    expect(await a.tryAcquire(randomUUID())).toEqual({ allowed: true });
+    expect(await a.tryAcquire(anyInstanceId())).toEqual({ allowed: true });
   });
 
   it('refills over time', async () => {
@@ -53,7 +56,7 @@ describe('ValkeyTokenBucketRateLimiter', () => {
       prefix,
       defaultLimit: { burst: 1, perSecond: 20 },
     });
-    const instance = randomUUID();
+    const instance = anyInstanceId();
     expect((await limiter.tryAcquire(instance)).allowed).toBe(true);
     expect((await limiter.tryAcquire(instance)).allowed).toBe(false);
     await sleep(120);
@@ -66,13 +69,13 @@ describe('ValkeyTokenBucketRateLimiter', () => {
       prefix,
       defaultLimit: { burst: 1, perSecond: 0.01 },
     });
-    const overridden = randomUUID();
+    const overridden = anyInstanceId();
     const override = { burst: 3, perSecond: 0.01 };
     const decisions = [];
     for (let i = 0; i < 4; i += 1) decisions.push(await limiter.tryAcquire(overridden, override));
     expect(decisions.map((d) => d.allowed)).toEqual([true, true, true, false]);
 
-    const defaulted = randomUUID();
+    const defaulted = anyInstanceId();
     expect((await limiter.tryAcquire(defaulted)).allowed).toBe(true);
     expect((await limiter.tryAcquire(defaulted)).allowed).toBe(false);
   });
@@ -82,7 +85,7 @@ describe('ValkeyTokenBucketRateLimiter', () => {
       commandTimeoutMs: 500,
     });
     const started = performance.now();
-    await expect(limiter.tryAcquire(randomUUID())).rejects.toThrow();
+    await expect(limiter.tryAcquire(anyInstanceId())).rejects.toThrow();
     expect(performance.now() - started).toBeLessThan(2_000);
   });
 });
@@ -101,7 +104,7 @@ describe('ValkeyCircuitBreaker', () => {
 
   it('opens after the threshold, then admits a single half-open probe', async () => {
     const cb = await breaker();
-    const id = randomUUID();
+    const id = anyInstanceId();
     expect(await cb.acquire(id)).toEqual({ allowed: true, probe: false });
     await cb.recordFailure(id);
     expect((await cb.acquire(id)).allowed).toBe(true);
@@ -126,7 +129,7 @@ describe('ValkeyCircuitBreaker', () => {
 
   it('half-open: only the probe holder closes the breaker; an unused probe can be given back', async () => {
     const cb = await breaker();
-    const id = randomUUID();
+    const id = anyInstanceId();
     await cb.recordFailure(id);
     await cb.recordFailure(id);
     await sleep(250);
@@ -155,7 +158,7 @@ describe('ValkeyCircuitBreaker', () => {
 
   it('force-open (configuration quarantine) is not closed by a stray success', async () => {
     const cb = await breaker();
-    const id = randomUUID();
+    const id = anyInstanceId();
     await cb.forceOpen(id, 60_000);
     await cb.recordSuccess(id);
     const permit = await cb.acquire(id);
@@ -165,14 +168,14 @@ describe('ValkeyCircuitBreaker', () => {
 
   it('uses per-instance overrides of threshold and open time', async () => {
     const cb = await breaker({ failureThreshold: 5, openMs: 60_000 });
-    const id = randomUUID();
+    const id = anyInstanceId();
     await cb.recordFailure(id, { failureThreshold: 1, openMs: 200 });
     expect((await cb.acquire(id)).allowed).toBe(false);
     await sleep(250);
     expect(await cb.acquire(id)).toMatchObject({ allowed: true, probe: true });
 
     // The default threshold (5) still applies to instances without overrides.
-    const other = randomUUID();
+    const other = anyInstanceId();
     await cb.recordFailure(other);
     await cb.recordFailure(other);
     expect((await cb.acquire(other)).allowed).toBe(true);
@@ -180,7 +183,7 @@ describe('ValkeyCircuitBreaker', () => {
 
   it('forgets failures outside the window', async () => {
     const cb = await breaker({ failureWindowMs: 100 });
-    const id = randomUUID();
+    const id = anyInstanceId();
     await cb.recordFailure(id);
     await sleep(150);
     await cb.recordFailure(id);

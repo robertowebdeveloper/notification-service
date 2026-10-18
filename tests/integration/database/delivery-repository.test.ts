@@ -44,7 +44,7 @@ describe('PgDeliveryRepository', () => {
 
   afterAll(closeOrm);
 
-  async function newDelivery(maxAttempts = 3): Promise<string> {
+  async function newDelivery(maxAttempts = 3): Promise<number> {
     const base = notificationInput(fixture);
     const result = await notifications.create({
       ...base,
@@ -54,14 +54,14 @@ describe('PgDeliveryRepository', () => {
     return deliveryIdOf(orm, result.notificationId);
   }
 
-  async function claimOrThrow(deliveryId: string, generation = 1) {
+  async function claimOrThrow(deliveryId: number, generation = 1) {
     const claim = await repo.claim(deliveryId, generation, LEASE_MS);
     if (!claim) throw new Error('expected claim');
     return claim;
   }
 
   /** Leases are compared with the database clock: expire them there. */
-  async function expireLease(deliveryId: string) {
+  async function expireLease(deliveryId: number) {
     await queryRows(
       orm,
       `update deliveries set lease_expires_at = now() - interval '1 second'
@@ -70,7 +70,7 @@ describe('PgDeliveryRepository', () => {
     );
   }
 
-  async function makeDue(deliveryId: string) {
+  async function makeDue(deliveryId: number) {
     await queryRows(orm, `update deliveries set next_attempt_at = now() where id = ?`, [
       deliveryId,
     ]);
@@ -78,7 +78,6 @@ describe('PgDeliveryRepository', () => {
 
   function attemptFor(claim: ClaimedDelivery): AttemptStart {
     return {
-      attemptId: randomUUID(),
       attemptNumber: claim.attemptsUsed + 1,
       providerInstanceId: fixture.providerInstanceId,
       providerInstanceRevision: 1,
@@ -86,7 +85,13 @@ describe('PgDeliveryRepository', () => {
     };
   }
 
-  async function delivery(deliveryId: string) {
+  async function startedAttempt(claim: ClaimedDelivery, attempt: AttemptStart): Promise<number> {
+    const attemptId = await repo.startAttempt(claim, attempt);
+    if (attemptId === null) throw new Error('expected attempt start');
+    return attemptId;
+  }
+
+  async function delivery(deliveryId: number) {
     const rows = await queryRows(
       orm,
       `select submission_status, generation, attempts_used, version, lease_token, next_attempt_at,
@@ -129,7 +134,7 @@ describe('PgDeliveryRepository', () => {
   it('returns null for a stale job of another generation', async () => {
     const deliveryId = await newDelivery();
     expect(await repo.claim(deliveryId, 2, LEASE_MS)).toBeNull();
-    expect(await repo.claim(randomUUID(), 1, LEASE_MS)).toBeNull();
+    expect(await repo.claim(Number.MAX_SAFE_INTEGER, 1, LEASE_MS)).toBeNull();
   });
 
   it('does not let a second worker claim while the lease is active', async () => {
@@ -174,10 +179,10 @@ describe('PgDeliveryRepository', () => {
     expect(await repo.renewLease(deliveryId, stale.leaseToken, stale.version, LEASE_MS)).toBe(
       false,
     );
-    expect(await repo.startAttempt(stale, attemptFor(stale))).toBe(false);
+    expect(await repo.startAttempt(stale, attemptFor(stale))).toBeNull();
     expect(await repo.markTerminal(stale, 'expired', 'ttl_exceeded')).toBe(false);
     expect(await repo.renewLease(deliveryId, fresh.leaseToken, fresh.version, LEASE_MS)).toBe(true);
-    expect(await repo.startAttempt(fresh, attemptFor(fresh))).toBe(true);
+    expect(await repo.startAttempt(fresh, attemptFor(fresh))).toEqual(expect.any(Number));
   });
 
   it('rejects a stale version even with the right lease token', async () => {
@@ -185,7 +190,7 @@ describe('PgDeliveryRepository', () => {
     const claim = await claimOrThrow(deliveryId);
     const outdated = { ...claim, version: claim.version - 1 };
 
-    expect(await repo.startAttempt(outdated, attemptFor(outdated))).toBe(false);
+    expect(await repo.startAttempt(outdated, attemptFor(outdated))).toBeNull();
     expect((await delivery(deliveryId))?.submission_status).toBe('pending');
   });
 
@@ -194,7 +199,8 @@ describe('PgDeliveryRepository', () => {
     const claim = await claimOrThrow(deliveryId);
     const attempt = attemptFor(claim);
 
-    expect(await repo.startAttempt(claim, attempt)).toBe(true);
+    const attemptId = await repo.startAttempt(claim, attempt);
+    expect(attemptId).toEqual(expect.any(Number));
 
     expect(await delivery(deliveryId)).toMatchObject({
       submission_status: 'sending',
@@ -203,7 +209,7 @@ describe('PgDeliveryRepository', () => {
     const attempts = await queryRows(
       orm,
       `select attempt_number, outcome, provider_idempotency_key from delivery_attempts where id = ?`,
-      [attempt.attemptId],
+      [attemptId],
     );
     expect(attempts).toEqual([
       {
@@ -213,17 +219,17 @@ describe('PgDeliveryRepository', () => {
       },
     ]);
     // Same claim cannot start a second attempt.
-    expect(await repo.startAttempt(claim, { ...attemptFor(claim), attemptNumber: 2 })).toBe(false);
+    expect(await repo.startAttempt(claim, { ...attemptFor(claim), attemptNumber: 2 })).toBeNull();
   });
 
   it('accepts an attempt and never lets the delivery be claimed again', async () => {
     const deliveryId = await newDelivery();
     const claim = await claimOrThrow(deliveryId);
     const attempt = attemptFor(claim);
-    await repo.startAttempt(claim, attempt);
+    const attemptId = await startedAttempt(claim, attempt);
 
     expect(
-      await repo.resolveAttempt(claim, attempt.attemptId, {
+      await repo.resolveAttempt(claim, attemptId, {
         outcome: 'accepted',
         externalReference: 'provider-msg-1',
         receiptStatus: 'pending',
@@ -238,7 +244,7 @@ describe('PgDeliveryRepository', () => {
     expect(await repo.claim(deliveryId, 1, LEASE_MS)).toBeNull();
     expect(await repo.markStaleSendingUnknown(10)).toBe(0);
     expect(
-      await repo.resolveAttempt(claim, attempt.attemptId, {
+      await repo.resolveAttempt(claim, attemptId, {
         outcome: 'accepted',
         externalReference: null,
         receiptStatus: 'unavailable',
@@ -250,11 +256,11 @@ describe('PgDeliveryRepository', () => {
     const deliveryId = await newDelivery();
     const claim = await claimOrThrow(deliveryId);
     const attempt = attemptFor(claim);
-    await repo.startAttempt(claim, attempt);
+    const attemptId = await startedAttempt(claim, attempt);
     const retryAt = new Date(Date.now() + 30_000);
 
     expect(
-      await repo.resolveAttempt(claim, attempt.attemptId, {
+      await repo.resolveAttempt(claim, attemptId, {
         outcome: 'rejected',
         error: retryableError,
         next: { kind: 'retry', at: retryAt },
@@ -281,7 +287,7 @@ describe('PgDeliveryRepository', () => {
     const attempts = await queryRows(
       orm,
       `select outcome, error_kind, error_code from delivery_attempts where id = ?`,
-      [attempt.attemptId],
+      [attemptId],
     );
     expect(attempts[0]).toEqual({
       outcome: 'rejected',
@@ -295,20 +301,20 @@ describe('PgDeliveryRepository', () => {
     await makeDue(deliveryId);
     const next = await claimOrThrow(deliveryId, 2);
     expect(next).toMatchObject({ generation: 2, attemptsUsed: 1 });
-    expect(await repo.startAttempt(next, attemptFor(next))).toBe(true);
+    expect(await repo.startAttempt(next, attemptFor(next))).toEqual(expect.any(Number));
   });
 
   it('does not create the retry outbox event when the fenced update fails', async () => {
     const deliveryId = await newDelivery();
     const claim = await claimOrThrow(deliveryId);
     const attempt = attemptFor(claim);
-    await repo.startAttempt(claim, attempt);
+    const attemptId = await startedAttempt(claim, attempt);
 
-    const result = await repo.resolveAttempt(
-      { ...claim, leaseToken: randomUUID() },
-      attempt.attemptId,
-      { outcome: 'rejected', error: retryableError, next: { kind: 'retry', at: new Date() } },
-    );
+    const result = await repo.resolveAttempt({ ...claim, leaseToken: randomUUID() }, attemptId, {
+      outcome: 'rejected',
+      error: retryableError,
+      next: { kind: 'retry', at: new Date() },
+    });
 
     expect(result).toBe(false);
     expect(await delivery(deliveryId)).toMatchObject({
@@ -316,7 +322,7 @@ describe('PgDeliveryRepository', () => {
       generation: 1,
     });
     const attempts = await queryRows(orm, `select outcome from delivery_attempts where id = ?`, [
-      attempt.attemptId,
+      attemptId,
     ]);
     expect(attempts[0]?.outcome).toBe('started');
     const events = await queryRows(
@@ -331,9 +337,9 @@ describe('PgDeliveryRepository', () => {
     const deliveryId = await newDelivery(1);
     const claim = await claimOrThrow(deliveryId);
     const attempt = attemptFor(claim);
-    await repo.startAttempt(claim, attempt);
+    const attemptId = await startedAttempt(claim, attempt);
 
-    await repo.resolveAttempt(claim, attempt.attemptId, {
+    await repo.resolveAttempt(claim, attemptId, {
       outcome: 'rejected',
       error: retryableError,
       next: { kind: 'retry', at: new Date() },
@@ -349,9 +355,9 @@ describe('PgDeliveryRepository', () => {
     const deliveryId = await newDelivery();
     const claim = await claimOrThrow(deliveryId);
     const attempt = attemptFor(claim);
-    await repo.startAttempt(claim, attempt);
+    const attemptId = await startedAttempt(claim, attempt);
 
-    await repo.resolveAttempt(claim, attempt.attemptId, {
+    await repo.resolveAttempt(claim, attemptId, {
       outcome: 'rejected',
       error: { ...retryableError, kind: 'permanent', code: 'invalid_recipient' },
       next: { kind: 'fail' },
@@ -367,9 +373,9 @@ describe('PgDeliveryRepository', () => {
     const deliveryId = await newDelivery();
     const claim = await claimOrThrow(deliveryId);
     const attempt = attemptFor(claim);
-    await repo.startAttempt(claim, attempt);
+    const attemptId = await startedAttempt(claim, attempt);
 
-    await repo.resolveAttempt(claim, attempt.attemptId, {
+    await repo.resolveAttempt(claim, attemptId, {
       outcome: 'unknown',
       reason: 'read timeout',
       externalReference: null,
@@ -392,7 +398,7 @@ describe('PgDeliveryRepository', () => {
     const deliveryId = await newDelivery();
     const claim = await claimOrThrow(deliveryId);
     const attempt = attemptFor(claim);
-    await repo.startAttempt(claim, attempt);
+    const attemptId = await startedAttempt(claim, attempt);
 
     expect(await repo.markStaleSendingUnknown(10)).toBe(0);
     await expireLease(deliveryId);
@@ -404,12 +410,12 @@ describe('PgDeliveryRepository', () => {
       last_error_code: 'lease_expired',
     });
     const attempts = await queryRows(orm, `select outcome from delivery_attempts where id = ?`, [
-      attempt.attemptId,
+      attemptId,
     ]);
     expect(attempts[0]?.outcome).toBe('unknown');
     // The old worker finishing late cannot overwrite the recovery decision.
     expect(
-      await repo.resolveAttempt(claim, attempt.attemptId, {
+      await repo.resolveAttempt(claim, attemptId, {
         outcome: 'accepted',
         externalReference: 'late',
         receiptStatus: 'unavailable',
@@ -423,11 +429,11 @@ describe('PgDeliveryRepository', () => {
       const deliveryId = await newDelivery();
       const claim = await claimOrThrow(deliveryId);
       const attempt = attemptFor(claim);
-      await repo.startAttempt(claim, attempt);
+      const attemptId = await startedAttempt(claim, attempt);
       await expireLease(deliveryId);
 
       const [resolved, moved] = await Promise.all([
-        repo.resolveAttempt(claim, attempt.attemptId, {
+        repo.resolveAttempt(claim, attemptId, {
           outcome: 'accepted',
           externalReference: `msg-${round}`,
           receiptStatus: 'unavailable',
@@ -441,7 +447,7 @@ describe('PgDeliveryRepository', () => {
       const [attemptRow] = await queryRows(
         orm,
         `select outcome from delivery_attempts where id = ?`,
-        [attempt.attemptId],
+        [attemptId],
       );
       expect([row?.submission_status, attemptRow?.outcome]).toEqual(
         resolved ? ['accepted', 'accepted'] : ['unknown', 'unknown'],

@@ -126,7 +126,7 @@ describe('config:apply atomicity and revocation against PostgreSQL', () => {
     expect((error as ConfigFileError).issues.join('\n')).toMatch(/revocation cannot be undone/);
 
     // Even a direct repository call with a different hash and revoked:false changes neither.
-    const tenantId = String(
+    const tenantId = Number(
       (await queryRows(orm, `select id from tenants where slug = ?`, [slug]))[0]?.id,
     );
     const forged = generateApiKey();

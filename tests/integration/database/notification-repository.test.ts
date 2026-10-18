@@ -22,7 +22,7 @@ describe('PgNotificationRepository', () => {
 
   afterAll(closeOrm);
 
-  async function createOrThrow(fixture: TenantFixture, key?: string): Promise<string> {
+  async function createOrThrow(fixture: TenantFixture, key?: string): Promise<number> {
     const result = await repo.create(
       notificationInput(fixture, key === undefined ? {} : { idempotencyKey: key }),
     );
@@ -149,15 +149,15 @@ describe('PgNotificationRepository', () => {
     });
     expect(detail?.createdAt).toBeInstanceOf(Date);
     expect(await repo.findById(other.tenantId, id)).toBeNull();
-    expect(await repo.findById(owner.tenantId, 'not-a-uuid')).toBeNull();
+    expect(await repo.findById(owner.tenantId, Number.MAX_SAFE_INTEGER)).toBeNull();
   });
 
   it('pages through notifications newest first with an opaque cursor', async () => {
     const fixture = await createTenantFixture(orm);
-    const ids: string[] = [];
+    const ids: number[] = [];
     for (let i = 0; i < 5; i++) ids.push(await createOrThrow(fixture));
 
-    const seen: string[] = [];
+    const seen: number[] = [];
     let cursor: string | undefined;
     for (let page = 0; page < 5; page++) {
       const result = await repo.list(fixture.tenantId, {

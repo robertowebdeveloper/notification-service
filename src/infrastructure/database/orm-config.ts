@@ -74,12 +74,28 @@ export interface OrmConfigOptions {
 interface PgClient {
   query: (...args: unknown[]) => unknown;
   connection?: { stream?: { destroy: () => void } };
+  setTypeParser?: (oid: number, parser: (value: string) => unknown) => void;
 }
 interface PgPool {
   on(event: 'connect', listener: (client: PgClient) => void): unknown;
 }
 
 const READ_TIMEOUT_MESSAGE = 'Query read timeout';
+const INT8_OID = 20;
+
+/**
+ * bigint (int8) values, i.e. identity ids and bigint counts, as JS numbers. Values beyond
+ * Number.MAX_SAFE_INTEGER stay text (never rounded): id readers reject them.
+ */
+export function parseInt8(value: string): number | string {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : value;
+}
+
+/** Installed per connection; the type overrides object is shared by this pool's clients only. */
+export function useNumericInt8(client: PgClient): void {
+  client.setTypeParser?.(INT8_OID, parseInt8);
+}
 
 /**
  * After a `query_timeout` the statement is still in flight on the socket, so the client would be
@@ -128,7 +144,10 @@ export function ormConfig(config: OrmSettings, options: OrmConfigOptions = {}) {
       query_timeout: t.queryTimeoutMs,
       idle_in_transaction_session_timeout: t.idleInTransactionTimeoutMs,
       onPoolCreated: (pool: PgPool) => {
-        pool.on('connect', destroyClientOnReadTimeout);
+        pool.on('connect', (client) => {
+          useNumericInt8(client);
+          destroyClientOnReadTimeout(client);
+        });
       },
     },
     extensions: [Migrator],

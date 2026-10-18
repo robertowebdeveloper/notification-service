@@ -93,7 +93,7 @@ export class ProcessProviderEvents {
    * evidence for a delivery whose (replay) attempt is in flight must not be dropped, since that
    * attempt may still end ambiguous.
    */
-  private async apply(event: StoredProviderEvent, deliveryId: string): Promise<boolean> {
+  private async apply(event: StoredProviderEvent, deliveryId: number): Promise<boolean> {
     const target = await this.deps.control.findTarget(event.tenantId, deliveryId);
     if (target !== null) {
       const effect = receiptEffect(event.type);

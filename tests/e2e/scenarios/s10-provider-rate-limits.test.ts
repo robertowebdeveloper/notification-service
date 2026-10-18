@@ -51,9 +51,9 @@ describe('scenario 10: provider rate limits', () => {
       // Local quota deferrals do not consume attempts.
       for (const [index, recipient] of recipients.entries()) {
         expect(sys.smtp.sendAttempts(recipient)).toBe(1);
-        const delivery = await sys.delivery(ids[index] ?? '');
+        const delivery = await sys.delivery(ids[index] ?? 0);
         expect(delivery?.attempts_used).toBe(1);
-        expect(await sys.attempts(ids[index] ?? '')).toHaveLength(1);
+        expect(await sys.attempts(ids[index] ?? 0)).toHaveLength(1);
       }
     },
     TIMING.startupMs * 2 + TIMING.recoveryMs + TIMING.deliveryMs,

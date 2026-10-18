@@ -19,7 +19,7 @@ export interface RequestOptions {
   headers?: Record<string, string>;
 }
 
-function path(template: string, id: string): string {
+function path(template: string, id: number): string {
   return template.replace(':id', encodeURIComponent(id));
 }
 
@@ -65,7 +65,7 @@ export class ApiClient {
     );
   }
 
-  getNotification(apiKey: string, id: string) {
+  getNotification(apiKey: string, id: number) {
     return this.request<NotificationView & Partial<ErrorBody>>(
       'GET',
       path(ROUTES.notificationById, id),
@@ -80,7 +80,7 @@ export class ApiClient {
     });
   }
 
-  retryNotification(apiKey: string, id: string, idempotencyKey: string = randomUUID()) {
+  retryNotification(apiKey: string, id: number, idempotencyKey: string = randomUUID()) {
     return this.request<Partial<ErrorBody> & Record<string, unknown>>(
       'POST',
       path(ROUTES.notificationRetry, id),
@@ -91,7 +91,7 @@ export class ApiClient {
   /** Raw webhook delivery: the body must be sent byte-for-byte as signed. */
   async postWebhook(
     providerType: string,
-    instanceId: string,
+    instanceId: number,
     rawBody: string,
     headers: Record<string, string>,
   ): Promise<ApiResponse> {
@@ -119,13 +119,13 @@ export class ApiClient {
  * `src/contracts/http-schemas.ts`; accepted shapes: `{ items }`, `{ data }`, `{ notifications }`
  * or a bare array. Returns undefined for anything else so the assertion fails visibly.
  */
-export function listItems(body: unknown): { id: string }[] | undefined {
-  if (Array.isArray(body)) return body as { id: string }[];
+export function listItems(body: unknown): { id: number }[] | undefined {
+  if (Array.isArray(body)) return body as { id: number }[];
   if (typeof body !== 'object' || body === null) return undefined;
   const record = body as Record<string, unknown>;
   for (const key of ['items', 'data', 'notifications']) {
     const value = record[key];
-    if (Array.isArray(value)) return value as { id: string }[];
+    if (Array.isArray(value)) return value as { id: number }[];
   }
   return undefined;
 }

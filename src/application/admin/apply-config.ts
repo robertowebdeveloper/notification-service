@@ -20,7 +20,7 @@ export interface ProviderCatalog {
 export interface ApiKeyLookup {
   /** `revoked` is optional for lookups that cannot tell (the repository enforces it anyway). */
   findByName(
-    tenantId: string,
+    tenantId: number,
     name: string,
   ): Promise<{ keyPrefix: string; keyHash: string; revoked?: boolean } | null>;
 }
@@ -29,7 +29,7 @@ export interface ApiKeyLookup {
 export interface AdminConfigWriter extends AdminConfigRepository {
   upsertApiKey(
     actor: string,
-    tenantId: string,
+    tenantId: number,
     key: ApiKeyConfig,
   ): Promise<UpsertOutcome & { created?: boolean }>;
 }

@@ -83,8 +83,8 @@ describe('e2e harness', () => {
       });
 
     const accepted = uniqueRecipient('fake');
-    const first = (await (await post(accepted, 'k1')).json()) as { id: string };
-    const replay = (await (await post(accepted, 'k1')).json()) as { id: string };
+    const first = (await (await post(accepted, 'k1')).json()) as { id: number };
+    const replay = (await (await post(accepted, 'k1')).json()) as { id: number };
     expect(replay.id).toBe(first.id);
     expect(resend.idempotencyKeys(accepted)).toEqual(['k1']);
 
@@ -105,7 +105,7 @@ describe('e2e harness', () => {
     expect((await post(held, 'k3')).status).toBe(409);
     const heldId = resend.sends(held)[0]?.emailId;
     expect(resend.release(held)).toBe(1);
-    expect(((await (await heldResponse).json()) as { id: string }).id).toBe(heldId);
+    expect(((await (await heldResponse).json()) as { id: number }).id).toBe(heldId);
   });
 
   it('signs webhooks exactly as the Resend verifier expects', () => {

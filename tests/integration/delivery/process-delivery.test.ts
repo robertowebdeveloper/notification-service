@@ -226,7 +226,7 @@ describe('ProcessDelivery (PostgreSQL + fake providers)', () => {
 
   it('configuration error without another provider -> failed', async () => {
     primary.queue(reject('configuration'));
-    const deliveryId = await newDelivery({ instanceIds: [fixture.instanceIds[0] ?? ''] });
+    const deliveryId = await newDelivery({ instanceIds: [fixture.instanceIds[0] ?? 0] });
     expect(await processDelivery(h).execute(await latestJob(orm, deliveryId))).toBe('failed');
   });
 
@@ -243,7 +243,7 @@ describe('ProcessDelivery (PostgreSQL + fake providers)', () => {
     const job = await latestJob(orm, deliveryId);
     expect(await worker.execute(job)).toBe('accepted');
     expect(await worker.execute(job)).toBe('stale');
-    expect(await worker.execute({ ...job, outboxEventId: 'other' })).toBe('stale');
+    expect(await worker.execute({ ...job, outboxEventId: Number.MAX_SAFE_INTEGER })).toBe('stale');
     expect(primary.sends).toHaveLength(1);
     expect(await attemptRows(orm, deliveryId)).toHaveLength(1);
   });
@@ -370,8 +370,8 @@ describe('ProcessDelivery (PostgreSQL + fake providers)', () => {
       }),
       primaryId,
     ]);
-    const limits: { id: string; limit: unknown }[] = [];
-    const failures: { id: string; settings: unknown }[] = [];
+    const limits: { id: number; limit: unknown }[] = [];
+    const failures: { id: number; settings: unknown }[] = [];
     const breaker = new InMemoryBreaker();
     const worker = processDelivery(h, {
       rateLimiter: {
@@ -381,7 +381,7 @@ describe('ProcessDelivery (PostgreSQL + fake providers)', () => {
         },
       },
       breaker: Object.assign(breaker, {
-        recordFailure: (id: string, settings?: unknown) => {
+        recordFailure: (id: number, settings?: unknown) => {
           failures.push({ id, settings });
           return Promise.resolve();
         },
@@ -390,7 +390,7 @@ describe('ProcessDelivery (PostgreSQL + fake providers)', () => {
     primary.queue(reject('retryable'));
     const deliveryId = await newDelivery();
     expect(await worker.execute(await latestJob(orm, deliveryId))).toBe('retry_scheduled');
-    const viaSecondary = await newDelivery({ instanceIds: [secondaryId ?? ''] });
+    const viaSecondary = await newDelivery({ instanceIds: [secondaryId ?? 0] });
     expect(await worker.execute(await latestJob(orm, viaSecondary))).toBe('accepted');
 
     expect(limits).toEqual([
@@ -432,7 +432,7 @@ describe('ProcessDelivery (PostgreSQL + fake providers)', () => {
     expect(secondary.sends).toHaveLength(1);
 
     const breaker = new InMemoryBreaker();
-    breaker.open.set(fixture.instanceIds[1] ?? '', Date.now() + 60_000);
+    breaker.open.set(fixture.instanceIds[1] ?? 0, Date.now() + 60_000);
     const second = await newDelivery();
     expect(await processDelivery(h, { breaker }).execute(await latestJob(orm, second))).toBe(
       'deferred',
@@ -503,7 +503,7 @@ describe('ProcessDelivery (PostgreSQL + fake providers)', () => {
   });
 
   describe('a scheduled safe replay never turns an ambiguous send into a terminal state', () => {
-    async function replayScheduled(): Promise<string> {
+    async function replayScheduled(): Promise<number> {
       primary = new FakeEmailAdapter('fake-primary', IDEMPOTENT_WITH_RECEIPTS);
       primary.queue(unknownResult());
       h = harness(orm, [primary, secondary]);
@@ -568,13 +568,12 @@ describe('ProcessDelivery (PostgreSQL + fake providers)', () => {
       ).toBe(true);
       expect(
         await h.repos.deliveries.startAttempt(claim, {
-          attemptId: '00000000-0000-4000-8000-000000000001',
           attemptNumber: 2,
-          providerInstanceId: fixture.instanceIds[0] ?? '',
+          providerInstanceId: fixture.instanceIds[0] ?? 0,
           providerInstanceRevision: 1,
           providerIdempotencyKey: 'k',
         }),
-      ).toBe(false);
+      ).toBeNull();
       expect(await deliveryRow(orm, deliveryId)).toMatchObject({
         submission_status: 'accepted',
         lease_token: null,
@@ -691,7 +690,7 @@ describe('ProcessDelivery (PostgreSQL + fake providers)', () => {
       const breaker = new InMemoryBreaker();
       breaker.probeToken = 'probe-2';
       const deliveryId = await newDelivery();
-      const deliveries = withOverrides({ startAttempt: () => Promise.resolve(false) });
+      const deliveries = withOverrides({ startAttempt: () => Promise.resolve(null) });
       const worker = processDelivery(h, { breaker, deliveries });
       expect(await worker.execute(await latestJob(orm, deliveryId))).toBe('fenced');
       expect(breaker.released).toEqual([{ id: fixture.instanceIds[0], probeToken: 'probe-2' }]);

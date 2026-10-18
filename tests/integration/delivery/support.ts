@@ -26,7 +26,7 @@ import {
   type Repositories,
 } from '../../../src/infrastructure/database/repositories.js';
 import { ProviderRegistry } from '../../../src/infrastructure/providers/registry.js';
-import { queryRows } from '../database/support.js';
+import { insertedId, queryRows } from '../database/support.js';
 
 export const SMTP_LIKE: ProviderCapabilities = {
   channels: ['email'],
@@ -47,10 +47,10 @@ export const IDEMPOTENT_WITH_RECEIPTS: ProviderCapabilities = {
 };
 
 export interface RecordedSend {
-  deliveryId: string;
-  attemptId: string;
+  deliveryId: number;
+  attemptId: number;
   idempotencyKey: string;
-  instanceId: string;
+  instanceId: number;
   recipient: string;
 }
 
@@ -173,14 +173,14 @@ export class AllowAllLimiter implements ProviderRateLimiter {
 }
 
 export class InMemoryBreaker implements ProviderCircuitBreaker {
-  readonly open = new Map<string, number>();
-  readonly failures = new Map<string, number>();
-  readonly forced: { id: string; durationMs: number }[] = [];
-  readonly successes: { id: string; probeToken: string | undefined }[] = [];
-  readonly released: { id: string; probeToken: string }[] = [];
+  readonly open = new Map<number, number>();
+  readonly failures = new Map<number, number>();
+  readonly forced: { id: number; durationMs: number }[] = [];
+  readonly successes: { id: number; probeToken: string | undefined }[] = [];
+  readonly released: { id: number; probeToken: string }[] = [];
   /** When set, the next acquire grants the half-open probe with this token. */
   probeToken: string | undefined;
-  acquire(id: string): Promise<BreakerPermit> {
+  acquire(id: number): Promise<BreakerPermit> {
     const until = this.open.get(id);
     if (until !== undefined && until > Date.now()) {
       return Promise.resolve({ allowed: false, retryAfterMs: until - Date.now() });
@@ -193,19 +193,19 @@ export class InMemoryBreaker implements ProviderCircuitBreaker {
         : { allowed: true, probe: true, probeToken },
     );
   }
-  recordSuccess(id: string, probeToken?: string): Promise<void> {
+  recordSuccess(id: number, probeToken?: string): Promise<void> {
     this.successes.push({ id, probeToken });
     return Promise.resolve();
   }
-  releaseProbe(id: string, probeToken: string): Promise<void> {
+  releaseProbe(id: number, probeToken: string): Promise<void> {
     this.released.push({ id, probeToken });
     return Promise.resolve();
   }
-  recordFailure(id: string): Promise<void> {
+  recordFailure(id: number): Promise<void> {
     this.failures.set(id, (this.failures.get(id) ?? 0) + 1);
     return Promise.resolve();
   }
-  forceOpen(id: string, durationMs: number): Promise<void> {
+  forceOpen(id: number, durationMs: number): Promise<void> {
     this.forced.push({ id, durationMs });
     this.open.set(id, Date.now() + durationMs);
     return Promise.resolve();
@@ -213,9 +213,9 @@ export class InMemoryBreaker implements ProviderCircuitBreaker {
 }
 
 export interface DeliveryFixture {
-  tenantId: string;
-  policyId: string;
-  instanceIds: string[];
+  tenantId: number;
+  policyId: number;
+  instanceIds: number[];
 }
 
 export interface FixtureProvider {
@@ -227,31 +227,31 @@ export async function createDeliveryFixture(
   orm: MikroORM,
   providers: FixtureProvider[],
 ): Promise<DeliveryFixture> {
-  const tenantId = randomUUID();
-  const policyId = randomUUID();
-  const instanceIds = providers.map(() => randomUUID());
-  await orm.em.fork().transactional(async (tx) => {
-    await tx.execute(`insert into tenants (id, slug, name) values (?, ?, 'Delivery tests')`, [
-      tenantId,
-      `tenant-${tenantId}`,
-    ]);
-    for (const [index, provider] of providers.entries()) {
+  return orm.em.fork().transactional(async (tx) => {
+    const tenantId = insertedId(
       await tx.execute(
-        `insert into provider_instances (id, tenant_id, name, provider_type, channel, config, enabled)
-         values (?, ?, ?, ?, 'email', '{}'::jsonb, ?)`,
-        [
-          instanceIds[index],
-          tenantId,
-          `provider-${index}`,
-          provider.type,
-          provider.enabled ?? true,
-        ],
+        `insert into tenants (slug, name) values (?, 'Delivery tests') returning id`,
+        [`tenant-${randomUUID()}`],
+      ),
+    );
+    const instanceIds: number[] = [];
+    for (const [index, provider] of providers.entries()) {
+      instanceIds.push(
+        insertedId(
+          await tx.execute(
+            `insert into provider_instances (tenant_id, name, provider_type, channel, config, enabled)
+             values (?, ?, ?, 'email', '{}'::jsonb, ?) returning id`,
+            [tenantId, `provider-${index}`, provider.type, provider.enabled ?? true],
+          ),
+        ),
       );
     }
-    await tx.execute(
-      `insert into routing_policies (id, tenant_id, routing_key, channel, version, max_attempts)
-       values (?, ?, 'transactional', 'email', 1, 5)`,
-      [policyId, tenantId],
+    const policyId = insertedId(
+      await tx.execute(
+        `insert into routing_policies (tenant_id, routing_key, channel, version, max_attempts)
+         values (?, 'transactional', 'email', 1, 5) returning id`,
+        [tenantId],
+      ),
     );
     for (const [index, id] of instanceIds.entries()) {
       await tx.execute(
@@ -260,15 +260,15 @@ export async function createDeliveryFixture(
         [policyId, index, tenantId, id],
       );
     }
+    return { tenantId, policyId, instanceIds };
   });
-  return { tenantId, policyId, instanceIds };
 }
 
 export interface NewDeliveryOptions {
   email?: string;
   maxAttempts?: number;
   expiresAt?: Date;
-  instanceIds?: string[];
+  instanceIds?: number[];
   fallbackEnabled?: boolean;
 }
 
@@ -277,7 +277,7 @@ export async function createDelivery(
   orm: MikroORM,
   fixture: DeliveryFixture,
   options: NewDeliveryOptions = {},
-): Promise<string> {
+): Promise<number> {
   const routing = {
     policyId: fixture.policyId,
     policyVersion: 1,
@@ -305,7 +305,7 @@ export async function createDelivery(
     result.notificationId,
   ]);
   const id = rows[0]?.id;
-  if (typeof id !== 'string') throw new Error('delivery not found');
+  if (typeof id !== 'number') throw new Error('delivery not found');
   return id;
 }
 
@@ -321,7 +321,7 @@ export interface DeliveryRow {
   last_error_code: string | null;
 }
 
-export async function deliveryRow(orm: MikroORM, id: string): Promise<DeliveryRow> {
+export async function deliveryRow(orm: MikroORM, id: number): Promise<DeliveryRow> {
   const rows = await queryRows(
     orm,
     `select submission_status, receipt_status, generation, attempts_used, version, lease_token,
@@ -333,7 +333,7 @@ export async function deliveryRow(orm: MikroORM, id: string): Promise<DeliveryRo
   return rows[0] as unknown as DeliveryRow;
 }
 
-export async function attemptRows(orm: MikroORM, deliveryId: string) {
+export async function attemptRows(orm: MikroORM, deliveryId: number) {
   return queryRows(
     orm,
     `select attempt_number, generation, provider_instance_id, provider_idempotency_key, outcome,
@@ -343,7 +343,7 @@ export async function attemptRows(orm: MikroORM, deliveryId: string) {
   );
 }
 
-export async function outboxRows(orm: MikroORM, deliveryId: string) {
+export async function outboxRows(orm: MikroORM, deliveryId: number) {
   return queryRows(
     orm,
     `select id, generation, status, available_at, dispatch_count, last_error
@@ -403,7 +403,7 @@ export function processDelivery(
  * Simulates time passing until the next attempt of a delivery is due (database clock): leases,
  * availability and `next_attempt_at` are compared with PostgreSQL `now()`, never an app clock.
  */
-export async function makeDue(orm: MikroORM, deliveryId: string): Promise<void> {
+export async function makeDue(orm: MikroORM, deliveryId: number): Promise<void> {
   await queryRows(
     orm,
     `update deliveries set next_attempt_at = now() where id = ? and next_attempt_at > now()`,
@@ -418,7 +418,7 @@ export async function makeDue(orm: MikroORM, deliveryId: string): Promise<void> 
 }
 
 /** Expires the worker lease of a delivery on the database clock. */
-export async function expireLease(orm: MikroORM, deliveryId: string): Promise<void> {
+export async function expireLease(orm: MikroORM, deliveryId: number): Promise<void> {
   await queryRows(
     orm,
     `update deliveries set lease_expires_at = now() - interval '1 second'
@@ -428,17 +428,17 @@ export async function expireLease(orm: MikroORM, deliveryId: string): Promise<vo
 }
 
 /** Job of the newest outbox event, once the delivery is due (see `makeDue`). */
-export async function dueJob(orm: MikroORM, deliveryId: string) {
+export async function dueJob(orm: MikroORM, deliveryId: number) {
   await makeDue(orm, deliveryId);
   return latestJob(orm, deliveryId);
 }
 
 /** Job data of the newest outbox event of a delivery. */
-export async function latestJob(orm: MikroORM, deliveryId: string) {
+export async function latestJob(orm: MikroORM, deliveryId: number) {
   const rows = await outboxRows(orm, deliveryId);
   const row = rows.at(-1);
   if (!row) throw new Error('no outbox event');
-  return { deliveryId, generation: Number(row.generation), outboxEventId: String(row.id) };
+  return { deliveryId, generation: Number(row.generation), outboxEventId: Number(row.id) };
 }
 
 export async function waitFor<T>(

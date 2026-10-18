@@ -96,7 +96,7 @@ Nell'MVP, configurare istanze e policy tramite comando amministrativo idempotent
 
 ## Modello dati PostgreSQL
 
-Usare UUID, date `timestamptz` in UTC, migrazioni versionate e vincoli SQL. JSONB è adatto a payload e metadati specifici dei canali; stato, relazioni e campi di ricerca restano colonne esplicite.
+Usare chiavi primarie intere progressive (`bigint generated always as identity`, vedi [database-schema.md](database-schema.md)), date `timestamptz` in UTC, migrazioni versionate e vincoli SQL. JSONB è adatto a payload e metadati specifici dei canali; stato, relazioni e campi di ricerca restano colonne esplicite.
 
 | Entità               | Responsabilità e campi principali                                                                                               |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
@@ -160,7 +160,7 @@ Content-Type: application/json
 }
 ```
 
-Risposta: `202`, header `Location` e corpo `{ "id": "<uuid>", "submissionStatus": "pending" }`. La risposta iniziale è conservata per i replay idempotenti; lo stato aggiornato si legge con GET.
+Risposta: `202`, header `Location` e corpo `{ "id": <intero>, "submissionStatus": "pending" }`. La risposta iniziale è conservata per i replay idempotenti; lo stato aggiornato si legge con GET.
 
 `Idempotency-Key` è obbligatoria e limitata al tenant. Stessa chiave e stesso hash del payload canonico restituiscono la stessa risposta senza creare consegne; payload diverso produce `409`. Gestire anche richieste simultanee tramite vincolo SQL. Conservare chiave e hash per almeno 30 giorni e comunque finché esistono elaborazioni aperte; dopo la scadenza l'idempotenza non è garantita. Il corpo canonico include routing, contenuto, destinatario e metadata, senza includere segreti.
 
@@ -172,7 +172,7 @@ Limiti iniziali proposti: corpo 256 KiB, metadata 4 KiB, una sola mailbox destin
 
 1. L'API salva notifica, delivery `pending` e outbox nella stessa transazione.
 2. Il dispatcher acquisisce eventi disponibili con lease in transazioni brevi, usando `FOR UPDATE SKIP LOCKED`; pubblica fuori transazione e registra l'esito solo dopo conferma della coda. PostgreSQL documenta questo locking per consumatori di tabelle simili a code. [SELECT e SKIP LOCKED](https://www.postgresql.org/docs/current/sql-select.html).
-3. Il job contiene solo `{ deliveryId, generation, outboxEventId }`. Identificativo deterministico per singola pubblicazione: `dispatch-<outboxUuid>-<sequence>`, senza dati personali.
+3. Il job contiene solo `{ deliveryId, generation, outboxEventId }`. Identificativo deterministico per singola pubblicazione: `dispatch-<outboxEventId>-<sequence>`, senza dati personali.
 4. Il worker acquisisce la delivery con aggiornamento atomico condizionato a stato, generazione e lease; ricava il tenant dal database e controlla scadenza, soppressioni, provider e quote. Job obsoleti o relativi a invii già accettati terminano senza inviare.
 5. Prima della chiamata esterna, salva il tentativo `started` e lo stato `sending`. Genera la chiave provider a partire dall'operazione persistita e riutilizza la stessa chiave e lo stesso payload nelle ripetizioni sicure della medesima operazione.
 6. Esegue l'invio fuori transazione. Salva risultato e transizione con controllo della versione/lease. Un fallimento certamente ritentabile aggiorna `next_attempt_at`, incrementa la generazione e crea il nuovo evento outbox nella stessa transazione.

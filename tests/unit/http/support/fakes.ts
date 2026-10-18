@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { pino } from 'pino';
 import type { FastifyInstance } from 'fastify';
 import type {
@@ -38,14 +37,22 @@ import { createEmailProviderRegistry } from '../../../../src/infrastructure/prov
 import { generateApiKey } from '../../../../src/infrastructure/security/api-keys.js';
 import { createSecretResolver } from '../../../../src/infrastructure/security/secret-resolver.js';
 
+let lastId = 0;
+
+/** Sequential id, unique within the test process (like a bigint identity column). */
+export function nextId(): number {
+  lastId += 1;
+  return lastId;
+}
+
 export class FakeApiKeys implements ApiKeyRepository {
   readonly records = new Map<string, ApiKeyRecord>();
-  touched: string[] = [];
+  touched: number[] = [];
 
-  add(tenantId: string, scopes: ApiScope[], overrides: Partial<ApiKeyRecord> = {}): string {
+  add(tenantId: number, scopes: ApiScope[], overrides: Partial<ApiKeyRecord> = {}): string {
     const key = generateApiKey();
     this.records.set(key.keyPrefix, {
-      id: randomUUID(),
+      id: nextId(),
       tenantId,
       keyHash: key.keyHash,
       scopes,
@@ -61,7 +68,7 @@ export class FakeApiKeys implements ApiKeyRepository {
     return Promise.resolve(this.records.get(keyPrefix) ?? null);
   }
 
-  touchLastUsed(apiKeyId: string): Promise<void> {
+  touchLastUsed(apiKeyId: number): Promise<void> {
     this.touched.push(apiKeyId);
     return Promise.resolve();
   }
@@ -73,7 +80,7 @@ interface StoredNotification {
 }
 
 export class FakeNotifications implements NotificationRepository {
-  readonly byId = new Map<string, StoredNotification>();
+  readonly byId = new Map<number, StoredNotification>();
   pendingOutbox = 0;
   createCalls = 0;
 
@@ -91,7 +98,7 @@ export class FakeNotifications implements NotificationRepository {
         );
       }
     }
-    const id = randomUUID();
+    const id = nextId();
     const now = new Date();
     this.byId.set(id, {
       input,
@@ -112,9 +119,9 @@ export class FakeNotifications implements NotificationRepository {
   }
 
   findByIdempotencyKey(
-    tenantId: string,
+    tenantId: number,
     idempotencyKey: string,
-  ): Promise<{ notificationId: string; requestHash: string } | null> {
+  ): Promise<{ notificationId: number; requestHash: string } | null> {
     for (const [id, stored] of this.byId) {
       if (stored.input.tenantId === tenantId && stored.input.idempotencyKey === idempotencyKey) {
         return Promise.resolve({ notificationId: id, requestHash: stored.input.requestHash });
@@ -123,13 +130,13 @@ export class FakeNotifications implements NotificationRepository {
     return Promise.resolve(null);
   }
 
-  findById(tenantId: string, id: string): Promise<NotificationDetail | null> {
+  findById(tenantId: number, id: number): Promise<NotificationDetail | null> {
     const stored = this.byId.get(id);
     return Promise.resolve(stored?.input.tenantId === tenantId ? stored.detail : null);
   }
 
   list(
-    tenantId: string,
+    tenantId: number,
     filter: { limit: number; cursor?: string; channel?: Channel },
   ): Promise<{ items: NotificationSummary[]; nextCursor: string | null }> {
     if (filter.cursor !== undefined && filter.cursor !== 'valid') {
@@ -148,11 +155,11 @@ export class FakeNotifications implements NotificationRepository {
 }
 
 export function instance(
-  tenantId: string,
+  tenantId: number,
   overrides: Partial<ProviderInstanceRecord> = {},
 ): ProviderInstanceRecord {
   return {
-    id: randomUUID(),
+    id: nextId(),
     tenantId,
     name: 'smtp-main',
     providerType: 'smtp',
@@ -172,12 +179,12 @@ export class FakeProviderConfig implements ProviderConfigRepository {
   readonly instances: ProviderInstanceRecord[] = [];
 
   addPolicy(
-    tenantId: string,
+    tenantId: number,
     providers: ProviderInstanceRecord[],
     overrides: Partial<RoutingPolicyRecord> = {},
   ) {
     const policy: RoutingPolicyRecord = {
-      id: randomUUID(),
+      id: nextId(),
       tenantId,
       routingKey: 'transactional',
       channel: 'email',
@@ -195,7 +202,7 @@ export class FakeProviderConfig implements ProviderConfigRepository {
     return policy;
   }
 
-  findProviderInstance(tenantId: string, id: string): Promise<ProviderInstanceRecord | null> {
+  findProviderInstance(tenantId: number, id: number): Promise<ProviderInstanceRecord | null> {
     return Promise.resolve(
       this.instances.find((i) => i.tenantId === tenantId && i.id === id) ?? null,
     );
@@ -203,7 +210,7 @@ export class FakeProviderConfig implements ProviderConfigRepository {
 
   findProviderInstanceForWebhook(
     providerType: string,
-    instanceId: string,
+    instanceId: number,
   ): Promise<ProviderInstanceRecord | null> {
     return Promise.resolve(
       this.instances.find((i) => i.providerType === providerType && i.id === instanceId) ?? null,
@@ -213,7 +220,7 @@ export class FakeProviderConfig implements ProviderConfigRepository {
   readonly resolveCalls: { routingKey: string; channel: Channel; platform: string | null }[] = [];
 
   resolveRoutingPolicy(
-    tenantId: string,
+    tenantId: number,
     routingKey: string,
     channel: Channel,
     platform: string | null,
@@ -234,7 +241,7 @@ export class FakeProviderEvents implements Pick<ProviderEventRepository, 'record
     );
     if (existing) return Promise.resolve({ kind: 'duplicate', event: existing });
     const event: StoredProviderEvent = {
-      id: randomUUID(),
+      id: nextId(),
       tenantId: input.tenantId,
       providerInstanceId: input.providerInstanceId,
       externalEventId: input.externalEventId,

@@ -1,12 +1,11 @@
 import type { QueryResult } from '@mikro-orm/core';
-import { randomUUID } from 'node:crypto';
 import type { SubmissionStatus } from '../../contracts/statuses.js';
 import type {
   ManualRetryInput,
   ManualRetryRepository,
   ManualRetryResult,
 } from '../../application/ports/repositories.js';
-import { forkEm, isUuid, num, str, type Orm, type Row } from './sql-support.js';
+import { forkEm, isId, num, str, toId, type Orm, type Row } from './sql-support.js';
 
 export const MANUAL_RETRY_OPERATION = 'notification.manual_retry';
 
@@ -22,7 +21,7 @@ export class PgManualRetryRepository implements ManualRetryRepository {
   constructor(private readonly orm: Orm) {}
 
   async retryFailed(input: ManualRetryInput): Promise<ManualRetryResult> {
-    if (!isUuid(input.tenantId) || !isUuid(input.notificationId)) return { kind: 'not_found' };
+    if (!isId(input.tenantId) || !isId(input.notificationId)) return { kind: 'not_found' };
     if (!Number.isInteger(input.maxAttempts) || input.maxAttempts < 1) {
       throw new RangeError('maxAttempts must be a positive integer');
     }
@@ -38,7 +37,7 @@ export class PgManualRetryRepository implements ManualRetryRepository {
       );
       const delivery = locked[0];
       if (!delivery) return { kind: 'not_found' };
-      const deliveryId = str(delivery.id);
+      const deliveryId = toId(delivery.id);
 
       const previous = await tx.execute<Row[]>(
         `select details->>'generation' as generation
@@ -47,7 +46,12 @@ export class PgManualRetryRepository implements ManualRetryRepository {
            and resource_id = ? and details->>'idempotencyKey' = ?
          order by occurred_at
          limit 1`,
-        [input.tenantId, MANUAL_RETRY_OPERATION, input.notificationId, input.retryIdempotencyKey],
+        [
+          input.tenantId,
+          MANUAL_RETRY_OPERATION,
+          String(input.notificationId),
+          input.retryIdempotencyKey,
+        ],
       );
       if (previous[0]) return { kind: 'replayed', generation: num(previous[0].generation) };
 
@@ -88,21 +92,20 @@ export class PgManualRetryRepository implements ManualRetryRepository {
 
       await tx.execute<QueryResult>(
         `insert into outbox_events
-           (id, tenant_id, delivery_id, generation, event_type, status, available_at)
-         values (?, ?, ?, ?, 'dispatch_delivery', 'pending', ?)`,
-        [randomUUID(), input.tenantId, deliveryId, generation, input.now],
+           (tenant_id, delivery_id, generation, event_type, status, available_at)
+         values (?, ?, ?, 'dispatch_delivery', 'pending', ?)`,
+        [input.tenantId, deliveryId, generation, input.now],
         'run',
       );
       await tx.execute<QueryResult>(
         `insert into audit_events
-           (id, tenant_id, actor, operation, resource_type, resource_id, details)
-         values (?, ?, ?, ?, 'notification', ?, ?::jsonb)`,
+           (tenant_id, actor, operation, resource_type, resource_id, details)
+         values (?, ?, ?, 'notification', ?, ?::jsonb)`,
         [
-          randomUUID(),
           input.tenantId,
           `api_key:${input.actorApiKeyId}`,
           MANUAL_RETRY_OPERATION,
-          input.notificationId,
+          String(input.notificationId),
           JSON.stringify({
             idempotencyKey: input.retryIdempotencyKey,
             deliveryId,

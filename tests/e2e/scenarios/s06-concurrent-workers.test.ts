@@ -28,7 +28,7 @@ describe('scenario 6: concurrent and stale workers', () => {
       await delay(TIMING.settleMs);
       for (const [index, recipient] of recipients.entries()) {
         expect(sys.smtp.sendAttempts(recipient), recipient).toBe(1);
-        const attempts = await sys.attempts(ids[index] ?? '');
+        const attempts = await sys.attempts(ids[index] ?? 0);
         expect(attempts).toHaveLength(1);
         expect(attempts[0]?.outcome).toBe('accepted');
       }

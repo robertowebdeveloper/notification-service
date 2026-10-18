@@ -137,8 +137,8 @@ export class ProviderResolver {
   }
 
   async evaluate(
-    tenantId: string,
-    instanceId: string,
+    tenantId: number,
+    instanceId: number,
     payload: ChannelPayload,
     routing: RoutingSnapshot,
     options: { requireIdempotency?: boolean } = {},

@@ -148,6 +148,7 @@ describe('loadConfig', () => {
       requestTimeoutMs: 30_000,
       handlerTimeoutMs: 30_000,
       trustProxy: false,
+      docs: true,
     });
     const tuned = (value: string) =>
       httpServerSettingsOf(loadConfig({ ...base, HTTP_TRUST_PROXY: value })).trustProxy;

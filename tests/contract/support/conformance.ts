@@ -42,8 +42,9 @@ export function sendContext<TConfig>(
 ): SendContext<TConfig> {
   counter += 1;
   return {
-    deliveryId: `delivery-${counter}`,
-    attemptId: `attempt-${counter}`,
+    deliveryId: counter,
+    createdAt: new Date(),
+    attemptId: 1000 + counter,
     idempotencyKey: `delivery-${counter}/send`,
     signal: new AbortController().signal,
     instance,

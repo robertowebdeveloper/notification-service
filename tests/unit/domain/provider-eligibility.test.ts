@@ -24,7 +24,7 @@ const idempotent: ProviderCapabilities = {
 };
 
 const configRejection: AttemptFacts = {
-  providerInstanceId: 'a',
+  providerInstanceId: 1,
   outcome: 'rejected',
   errorKind: 'configuration',
 };
@@ -70,21 +70,21 @@ describe('fallback rules', () => {
   it('excludes only instances that rejected for configuration', () => {
     const history: AttemptFacts[] = [
       configRejection,
-      { providerInstanceId: 'b', outcome: 'rejected', errorKind: 'retryable' },
-      { providerInstanceId: 'c', outcome: 'unknown', errorKind: null },
+      { providerInstanceId: 2, outcome: 'rejected', errorKind: 'retryable' },
+      { providerInstanceId: 3, outcome: 'unknown', errorKind: null },
     ];
-    expect([...excludedInstances(history)]).toEqual(['a']);
+    expect([...excludedInstances(history)]).toEqual([1]);
   });
 
   it('orders candidates by snapshot and honours a disabled fallback', () => {
-    expect(candidateOrder(['a', 'b', 'c'], new Set(['a']), true)).toEqual(['b', 'c']);
-    expect(candidateOrder(['a', 'b', 'c'], new Set(), false)).toEqual(['a']);
-    expect(candidateOrder(['a', 'b'], new Set(['a']), false)).toEqual([]);
+    expect(candidateOrder([1, 2, 3], new Set([1]), true)).toEqual([2, 3]);
+    expect(candidateOrder([1, 2, 3], new Set(), false)).toEqual([1]);
+    expect(candidateOrder([1, 2], new Set([1]), false)).toEqual([]);
   });
 
   const base = {
-    currentInstanceId: 'a',
-    snapshotInstanceIds: ['a', 'b'],
+    currentInstanceId: 1,
+    snapshotInstanceIds: [1, 2],
     history: [] as AttemptFacts[],
     fallbackEnabled: true,
     attemptsUsed: 1,
@@ -123,7 +123,7 @@ describe('fallback rules', () => {
       isFallbackEligible({
         ...base,
         error,
-        currentInstanceId: 'b',
+        currentInstanceId: 2,
         history: [configRejection],
       }),
     ).toBe(false);

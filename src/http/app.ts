@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import Fastify, { type FastifyInstance } from 'fastify';
 import swagger from '@fastify/swagger';
+import swaggerUi from '@fastify/swagger-ui';
 import type { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 import type { LoggerOptions } from 'pino';
 import { API_VERSION_PREFIX, LIMITS } from '../contracts/http-schemas.js';
@@ -47,12 +48,15 @@ export interface HttpServerOptions {
   handlerTimeoutMs?: number;
   /** Fastify `trustProxy` (client IP for per-IP limits behind an ingress). */
   trustProxy?: boolean | number | string;
+  /** Serve the Swagger UI on DOCS_PATH (default false). */
+  docs?: boolean;
 }
 
 /** Applied when `http` is omitted, so no API request can hang forever. */
 export const DEFAULT_HTTP_TIMEOUT_MS = 30_000;
 
 export const OPENAPI_JSON_PATH = `${API_VERSION_PREFIX}/openapi.json`;
+export const DOCS_PATH = `${API_VERSION_PREFIX}/docs`;
 
 /** A hop count trusts that many proxies in front of the server (proxy-addr semantics). */
 function trustProxyOption(
@@ -91,6 +95,16 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
       },
     },
   });
+
+  if (http.docs === true) {
+    // Static UI only: it reads the same document as OPENAPI_JSON_PATH and calls no API itself
+    // unless the user runs "Try it out" with their own key.
+    await app.register(swaggerUi, {
+      routePrefix: DOCS_PATH,
+      staticCSP: true,
+      uiConfig: { docExpansion: 'list', deepLinking: true, persistAuthorization: false },
+    });
+  }
 
   app.setErrorHandler(errorHandler);
   app.setNotFoundHandler((request, reply) =>

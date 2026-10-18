@@ -118,12 +118,16 @@ export class BullMqDeliveryPublisher implements DeliveryJobPublisher, DeliveryJo
   }
 }
 
+function isPositiveId(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+}
+
 export function isDeliveryJobData(value: unknown): value is DeliveryJobData {
   if (typeof value !== 'object' || value === null) return false;
   const data = value as Record<string, unknown>;
   return (
-    typeof data.deliveryId === 'string' &&
-    typeof data.outboxEventId === 'string' &&
+    isPositiveId(data.deliveryId) &&
+    isPositiveId(data.outboxEventId) &&
     typeof data.generation === 'number' &&
     Number.isInteger(data.generation) &&
     data.generation > 0

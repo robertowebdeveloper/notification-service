@@ -41,14 +41,14 @@ export const DEFAULT_PAGE_SIZE = 25;
 export class QueryNotifications {
   constructor(private readonly notifications: Pick<NotificationRepository, 'findById' | 'list'>) {}
 
-  async get(tenantId: string, id: string): Promise<NotificationView> {
+  async get(tenantId: number, id: number): Promise<NotificationView> {
     const detail = await this.notifications.findById(tenantId, id);
     if (detail === null) throw new ApplicationError('not_found', 'Notification not found');
     return toNotificationView(detail);
   }
 
   async list(
-    tenantId: string,
+    tenantId: number,
     query: ListNotificationsQuery,
   ): Promise<{ items: NotificationSummaryView[]; nextCursor: string | null }> {
     if (

@@ -5,7 +5,7 @@ import type {
   LostPublicationCandidate,
   OutboxRepository,
 } from '../../application/ports/repositories.js';
-import { forkEm, isUuid, num, str, toDate, type Orm, type Row } from './sql-support.js';
+import { forkEm, isId, isUuid, num, str, toDate, toId, type Orm, type Row } from './sql-support.js';
 
 /**
  * Availability, leases and staleness use the database clock only (`now()`), so several
@@ -44,8 +44,8 @@ export class PgOutboxRepository implements OutboxRepository {
     return claimed
       .sort((a, b) => toDate(a.available_at).getTime() - toDate(b.available_at).getTime())
       .map((row) => ({
-        id: str(row.id),
-        deliveryId: str(row.delivery_id),
+        id: toId(row.id),
+        deliveryId: toId(row.delivery_id),
         generation: num(row.generation),
         channel: str(row.channel) as Channel,
         dispatchCount: num(row.dispatch_count),
@@ -53,8 +53,8 @@ export class PgOutboxRepository implements OutboxRepository {
       }));
   }
 
-  async markPublished(id: string, leaseToken: string): Promise<boolean> {
-    if (!isUuid(id) || !isUuid(leaseToken)) return false;
+  async markPublished(id: number, leaseToken: string): Promise<boolean> {
+    if (!isId(id) || !isUuid(leaseToken)) return false;
     const em = forkEm(this.orm);
     const result = await em.execute<QueryResult>(
       `update outbox_events
@@ -68,12 +68,12 @@ export class PgOutboxRepository implements OutboxRepository {
   }
 
   async releaseAfterError(
-    id: string,
+    id: number,
     leaseToken: string,
     technicalError: string,
     retryAfterMs: number,
   ): Promise<boolean> {
-    if (!isUuid(id) || !isUuid(leaseToken)) return false;
+    if (!isId(id) || !isUuid(leaseToken)) return false;
     const em = forkEm(this.orm);
     const result = await em.execute<QueryResult>(
       `update outbox_events
@@ -104,8 +104,8 @@ export class PgOutboxRepository implements OutboxRepository {
       [olderThanMs, limit],
     );
     return rows.map((row) => ({
-      id: str(row.id),
-      deliveryId: str(row.delivery_id),
+      id: toId(row.id),
+      deliveryId: toId(row.delivery_id),
       channel: str(row.channel) as Channel,
       dispatchCount: num(row.dispatch_count),
     }));
@@ -117,12 +117,12 @@ export class PgOutboxRepository implements OutboxRepository {
    * under the row lock, so a candidate processed meanwhile is left alone.
    */
   async rearmPublications(candidates: readonly LostPublicationCandidate[]): Promise<number> {
-    const valid = candidates.filter((candidate) => isUuid(candidate.id));
+    const valid = candidates.filter((candidate) => isId(candidate.id));
     if (valid.length === 0) return 0;
     const em = forkEm(this.orm);
     const result = await em.execute<QueryResult>(
       `with wanted as (
-         select (w->>'id')::uuid as id, (w->>'dispatchCount')::int as dispatch_count
+         select (w->>'id')::bigint as id, (w->>'dispatchCount')::int as dispatch_count
          from jsonb_array_elements(?::jsonb) w
        ), lost as (
          select o.id from outbox_events o

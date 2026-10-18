@@ -26,7 +26,7 @@ describe('scenario 3: dispatcher crash windows', () => {
     });
   }
 
-  async function expectSingleSend(sys: E2eSystem, id: string, recipient: string) {
+  async function expectSingleSend(sys: E2eSystem, id: number, recipient: string) {
     await delay(TIMING.settleMs);
     expect(sys.smtp.sendAttempts(recipient)).toBe(1);
     expect(sys.smtp.acceptedMessages(recipient)).toHaveLength(1);
@@ -193,7 +193,7 @@ describe('scenario 3: dispatcher crash windows', () => {
       await delay(TIMING.settleMs);
       for (const [index, recipient] of recipients.entries()) {
         expect(sys.smtp.sendAttempts(recipient), recipient).toBe(1);
-        expect(await sys.attempts(ids[index] ?? '')).toHaveLength(1);
+        expect(await sys.attempts(ids[index] ?? 0)).toHaveLength(1);
       }
     },
     timeout,

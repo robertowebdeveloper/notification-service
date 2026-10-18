@@ -33,7 +33,7 @@ describe('scenario 1: email via SMTP (Mailpit) and Resend (fake API)', () => {
       expect(response.status).toBe(202);
       expect(Object.keys(response.body).sort()).toEqual(['id', 'submissionStatus']);
       expect(response.body.submissionStatus).toBe('pending');
-      expect(response.body.id).toMatch(/^[0-9a-f-]{36}$/);
+      expect(Number.isSafeInteger(response.body.id) && response.body.id > 0).toBe(true);
       expect(response.headers.get('location')).toContain(`/v1/notifications/${response.body.id}`);
 
       const view = await sys.waitForStatus(tenant, response.body.id, ['accepted']);

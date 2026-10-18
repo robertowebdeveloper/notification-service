@@ -59,7 +59,7 @@ describe('notifications API against PostgreSQL', () => {
   it('creates notification, pending delivery and outbox event, answering 202 + Location', async () => {
     const res = await createRequest(h.app, key(tenant), 'create-1');
     expect(res.statusCode).toBe(202);
-    const { id } = res.json<{ id: string }>();
+    const { id } = res.json<{ id: number }>();
     expect(res.headers.location).toBe(`/v1/notifications/${id}`);
 
     const rows = await queryRows(
@@ -148,7 +148,7 @@ describe('notifications API against PostgreSQL', () => {
 
   it('exposes the nullable platform in the detail view', async () => {
     const created = await createRequest(h.app, key(tenant), 'platform-1');
-    const id = created.json<{ id: string }>().id;
+    const id = created.json<{ id: number }>().id;
     const res = await h.app.inject({
       method: 'GET',
       url: `/v1/notifications/${id}`,
@@ -163,7 +163,7 @@ describe('notifications API against PostgreSQL', () => {
       Array.from({ length: 8 }, () => createRequest(h.app, key(tenant), 'concurrent-1')),
     );
     expect(responses.map((r) => r.statusCode)).toEqual(Array(8).fill(202));
-    expect(new Set(responses.map((r) => r.json<{ id: string }>().id)).size).toBe(1);
+    expect(new Set(responses.map((r) => r.json<{ id: number }>().id)).size).toBe(1);
     const rows = await queryRows(
       orm,
       `select count(*)::int as count from notifications where tenant_id = ? and idempotency_key = ?`,
@@ -213,10 +213,10 @@ describe('notifications API against PostgreSQL', () => {
 
   it('isolates reads per tenant (404 cross-tenant) and paginates lists', async () => {
     const reader = await setupTenant(orm);
-    const ids: string[] = [];
+    const ids: number[] = [];
     for (let i = 0; i < 3; i += 1) {
       const res = await createRequest(h.app, key(reader), `list-${i}`);
-      ids.push(res.json<{ id: string }>().id);
+      ids.push(res.json<{ id: number }>().id);
     }
     const auth = { authorization: `Bearer ${key(reader, 'read')}` };
     const one = await h.app.inject({
@@ -239,7 +239,7 @@ describe('notifications API against PostgreSQL', () => {
       url: '/v1/notifications?limit=2',
       headers: auth,
     });
-    const body1 = page1.json<{ items: { id: string }[]; nextCursor: string }>();
+    const body1 = page1.json<{ items: { id: number }[]; nextCursor: string }>();
     expect(body1.items).toHaveLength(2);
     expect(body1.nextCursor).not.toBeNull();
     const page2 = await h.app.inject({
@@ -247,7 +247,7 @@ describe('notifications API against PostgreSQL', () => {
       url: `/v1/notifications?limit=2&cursor=${encodeURIComponent(body1.nextCursor)}`,
       headers: auth,
     });
-    const body2 = page2.json<{ items: { id: string }[]; nextCursor: string | null }>();
+    const body2 = page2.json<{ items: { id: number }[]; nextCursor: string | null }>();
     expect(body2.items).toHaveLength(1);
     expect(body2.nextCursor).toBeNull();
     expect(new Set([...body1.items, ...body2.items].map((i) => i.id))).toEqual(new Set(ids));

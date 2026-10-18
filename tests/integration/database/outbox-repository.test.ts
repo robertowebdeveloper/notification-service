@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import type { MikroORM } from '@mikro-orm/postgresql';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { PgDeliveryRepository } from '../../../src/infrastructure/database/delivery-repository.js';
@@ -41,9 +40,9 @@ describe('PgOutboxRepository', () => {
     await queryRows(orm, sql, params);
   }
 
-  async function seed(count: number): Promise<string[]> {
+  async function seed(count: number): Promise<number[]> {
     const fixture = await createTenantFixture(orm);
-    const ids: string[] = [];
+    const ids: number[] = [];
     for (let i = 0; i < count; i++) {
       const result = await notifications.create(notificationInput(fixture));
       if (result.kind !== 'created') throw new Error('expected created');
@@ -149,20 +148,16 @@ describe('PgOutboxRepository', () => {
     for (const event of claimed) await outbox.markPublished(event.id, event.leaseToken);
 
     // The second delivery was processed and accepted: it must never be re-dispatched.
-    const claim = await deliveries.claim(acceptedDelivery ?? '', 1, LEASE_MS);
+    const claim = await deliveries.claim(acceptedDelivery ?? 0, 1, LEASE_MS);
     if (!claim) throw new Error('expected delivery claim');
     const started = await deliveries.startAttempt(claim, {
-      attemptId: randomUUID(),
       attemptNumber: 1,
-      providerInstanceId: claim.routing.providerInstanceIds[0] ?? '',
+      providerInstanceId: claim.routing.providerInstanceIds[0] ?? 0,
       providerInstanceRevision: 1,
       providerIdempotencyKey: 'k',
     });
-    expect(started).toBe(true);
-    const attempt = await queryRows(orm, `select id from delivery_attempts where delivery_id = ?`, [
-      acceptedDelivery,
-    ]);
-    const resolved = await deliveries.resolveAttempt(claim, String(attempt[0]?.id), {
+    expect(started).toEqual(expect.any(Number));
+    const resolved = await deliveries.resolveAttempt(claim, started ?? 0, {
       outcome: 'accepted',
       externalReference: 'msg-1',
       receiptStatus: 'unavailable',
@@ -174,7 +169,7 @@ describe('PgOutboxRepository', () => {
     const candidates = await outbox.findLostPublications(60_000, 10);
     expect(candidates).toEqual([
       {
-        id: expect.any(String) as unknown,
+        id: expect.any(Number) as unknown,
         deliveryId: lostDelivery,
         channel: 'email',
         dispatchCount: 1,
@@ -210,12 +205,12 @@ describe('PgOutboxRepository', () => {
     if (!event) throw new Error('expected claim');
     await outbox.markPublished(event.id, event.leaseToken);
     await shift(`update outbox_events set published_at = now() - interval '2 minutes'`);
-    await deliveries.claim(deliveryId ?? '', 1, 600_000);
+    await deliveries.claim(deliveryId ?? 0, 1, 600_000);
 
     expect(await outbox.findLostPublications(60_000, 10)).toEqual([]);
     expect(
       await outbox.rearmPublications([
-        { id: event.id, deliveryId: deliveryId ?? '', channel: 'email', dispatchCount: 1 },
+        { id: event.id, deliveryId: deliveryId ?? 0, channel: 'email', dispatchCount: 1 },
       ]),
     ).toBe(0);
   });

@@ -19,7 +19,7 @@ export class LeaseKeeper {
     private readonly deps: {
       deliveries: DeliveryRepository;
       logger: DeliveryLogger;
-      deliveryId: string;
+      deliveryId: number;
       leaseToken: string;
       version: number;
       leaseMs: number;

@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import type { Channel, ChannelPayload } from '../../contracts/channels.js';
 import type { ReceiptStatus, SubmissionStatus } from '../../contracts/statuses.js';
 import type {
@@ -15,12 +14,13 @@ import {
   decodeCursor,
   encodeCursor,
   forkEm,
-  isUuid,
+  isId,
   num,
   str,
   strOrNull,
   toDate,
   toDateOrNull,
+  toId,
   type Orm,
   type Row,
 } from './sql-support.js';
@@ -59,7 +59,7 @@ function toSummary(row: Row): NotificationSummary {
   const createdAt = toDate(row.created_at);
   const deliveryUpdatedAt = toDate(row.updated_at);
   return {
-    id: str(row.id),
+    id: toId(row.id),
     channel: str(row.channel) as Channel,
     platform: strOrNull(row.platform),
     routingKey: str(row.routing_key),
@@ -76,18 +76,16 @@ export class PgNotificationRepository implements NotificationRepository {
   async create(input: CreateNotificationInput): Promise<CreateNotificationResult> {
     const em = forkEm(this.orm);
     return em.transactional(async (tx) => {
-      const notificationId = randomUUID();
       // ON CONFLICT waits for a concurrent in-flight insert of the same key and then skips,
       // so exactly one request creates the notification.
       const inserted = await tx.execute<Row[]>(
         `insert into notifications
-           (id, tenant_id, idempotency_key, request_hash, channel, routing_key, routing_policy_id,
+           (tenant_id, idempotency_key, request_hash, channel, routing_key, routing_policy_id,
             payload, metadata, routing_snapshot)
-         values (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb)
+         values (?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb)
          on conflict on constraint notifications_idempotency_unique do nothing
          returning id`,
         [
-          notificationId,
           input.tenantId,
           input.idempotencyKey,
           input.requestHash,
@@ -109,18 +107,18 @@ export class PgNotificationRepository implements NotificationRepository {
         const row = existing[0];
         if (!row) throw new Error('idempotency conflict without visible notification');
         return str(row.request_hash) === input.requestHash
-          ? { kind: 'replayed', notificationId: str(row.id) }
+          ? { kind: 'replayed', notificationId: toId(row.id) }
           : { kind: 'conflict' };
       }
 
-      const deliveryId = randomUUID();
-      await tx.execute(
+      const notificationId = toId(inserted[0]?.id);
+      const delivery = await tx.execute<Row[]>(
         `insert into deliveries
-           (id, tenant_id, notification_id, channel, recipient, submission_status, receipt_status,
+           (tenant_id, notification_id, channel, recipient, submission_status, receipt_status,
             generation, max_attempts, expires_at)
-         values (?, ?, ?, ?, ?, 'pending', 'unavailable', 1, ?, ?)`,
+         values (?, ?, ?, ?, 'pending', 'unavailable', 1, ?, ?)
+         returning id`,
         [
-          deliveryId,
           input.tenantId,
           notificationId,
           input.payload.channel,
@@ -130,29 +128,29 @@ export class PgNotificationRepository implements NotificationRepository {
         ],
       );
       await tx.execute(
-        `insert into outbox_events (id, tenant_id, delivery_id, generation, event_type, status)
-         values (?, ?, ?, 1, 'dispatch_delivery', 'pending')`,
-        [randomUUID(), input.tenantId, deliveryId],
+        `insert into outbox_events (tenant_id, delivery_id, generation, event_type, status)
+         values (?, ?, 1, 'dispatch_delivery', 'pending')`,
+        [input.tenantId, toId(delivery[0]?.id)],
       );
       return { kind: 'created', notificationId };
     });
   }
 
   async findByIdempotencyKey(
-    tenantId: string,
+    tenantId: number,
     idempotencyKey: string,
   ): Promise<IdempotencyRecord | null> {
-    if (!isUuid(tenantId)) return null;
+    if (!isId(tenantId)) return null;
     const found = await forkEm(this.orm).execute<Row[]>(
       `select id, request_hash from notifications where tenant_id = ? and idempotency_key = ?`,
       [tenantId, idempotencyKey],
     );
     const row = found[0];
-    return row ? { notificationId: str(row.id), requestHash: str(row.request_hash) } : null;
+    return row ? { notificationId: toId(row.id), requestHash: str(row.request_hash) } : null;
   }
 
-  async findById(tenantId: string, id: string): Promise<NotificationDetail | null> {
-    if (!isUuid(tenantId) || !isUuid(id)) return null;
+  async findById(tenantId: number, id: number): Promise<NotificationDetail | null> {
+    if (!isId(tenantId) || !isId(id)) return null;
     const em = forkEm(this.orm);
     const found = await em.execute<Row[]>(
       `select ${SUMMARY_COLUMNS} from notifications n ${DELIVERY_JOIN}
@@ -167,7 +165,7 @@ export class PgNotificationRepository implements NotificationRepository {
        from delivery_attempts
        where tenant_id = ? and delivery_id = ?
        order by attempt_number`,
-      [tenantId, str(row.delivery_id)],
+      [tenantId, toId(row.delivery_id)],
     );
     const attempts: AttemptSummary[] = attemptRows.map((a) => ({
       number: num(a.attempt_number),
@@ -185,11 +183,11 @@ export class PgNotificationRepository implements NotificationRepository {
   }
 
   async list(
-    tenantId: string,
+    tenantId: number,
     filter: ListNotificationsFilter,
   ): Promise<{ items: NotificationSummary[]; nextCursor: string | null }> {
     const limit = Math.max(1, Math.min(filter.limit, 200));
-    if (!isUuid(tenantId)) return { items: [], nextCursor: null };
+    if (!isId(tenantId)) return { items: [], nextCursor: null };
 
     const where: string[] = ['n.tenant_id = ?'];
     const params: unknown[] = [tenantId];
@@ -211,7 +209,7 @@ export class PgNotificationRepository implements NotificationRepository {
     }
     if (filter.cursor !== undefined) {
       const cursor = decodeCursor(filter.cursor);
-      where.push('(n.created_at, n.id) < (?::timestamptz, ?::uuid)');
+      where.push('(n.created_at, n.id) < (?::timestamptz, ?::bigint)');
       params.push(cursor.createdAt, cursor.id);
     }
     params.push(limit + 1);

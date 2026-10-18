@@ -235,7 +235,7 @@ describe('lookup and admin repositories', () => {
       revokedAt: null,
       tenantActive: true,
     });
-    await repos.apiKeys.touchLastUsed(found?.id ?? '', new Date());
+    await repos.apiKeys.touchLastUsed(found?.id ?? 0, new Date());
 
     await repos.adminConfig.upsertApiKey('operator', tenantId, {
       name: 'backend',
@@ -274,14 +274,13 @@ describe('lookup and admin repositories', () => {
 
     const claim = await repos.deliveries.claim(deliveryId, 1, 60_000);
     if (!claim) throw new Error('expected claim');
-    const attemptId = randomUUID();
-    await repos.deliveries.startAttempt(claim, {
-      attemptId,
+    const attemptId = await repos.deliveries.startAttempt(claim, {
       attemptNumber: 1,
       providerInstanceId: fixture.providerInstanceId,
       providerInstanceRevision: 1,
       providerIdempotencyKey: 'k1',
     });
+    if (attemptId === null) throw new Error('expected attempt start');
     await repos.deliveries.resolveAttempt(claim, attemptId, {
       outcome: 'accepted',
       externalReference: 'msg-42',

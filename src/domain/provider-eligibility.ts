@@ -45,7 +45,7 @@ export function capabilitiesCover(
 
 /** Minimal view of a past attempt needed by the fallback rules. */
 export interface AttemptFacts {
-  providerInstanceId: string;
+  providerInstanceId: number;
   outcome: 'started' | 'accepted' | 'rejected' | 'unknown';
   errorKind: ProviderErrorKind | null;
 }
@@ -55,7 +55,7 @@ export interface AttemptFacts {
  * configuration problem. Retryable rejections do not exclude an instance (the shared circuit
  * breaker decides when an unhealthy instance must be skipped).
  */
-export function excludedInstances(history: readonly AttemptFacts[]): Set<string> {
+export function excludedInstances(history: readonly AttemptFacts[]): Set<number> {
   return new Set(
     history
       .filter((attempt) => attempt.outcome === 'rejected' && attempt.errorKind === 'configuration')
@@ -68,18 +68,18 @@ export function excludedInstances(history: readonly AttemptFacts[]): Set<string>
  * fallback is disabled by the policy only the first instance of the snapshot is ever used.
  */
 export function candidateOrder(
-  snapshotInstanceIds: readonly string[],
-  excluded: ReadonlySet<string>,
+  snapshotInstanceIds: readonly number[],
+  excluded: ReadonlySet<number>,
   fallbackEnabled: boolean,
-): string[] {
+): number[] {
   const ordered = fallbackEnabled ? snapshotInstanceIds : snapshotInstanceIds.slice(0, 1);
   return ordered.filter((id) => !excluded.has(id));
 }
 
 export interface FallbackInput {
   error: { kind: ProviderErrorKind; definitelyNotAccepted: boolean };
-  currentInstanceId: string;
-  snapshotInstanceIds: readonly string[];
+  currentInstanceId: number;
+  snapshotInstanceIds: readonly number[];
   history: readonly AttemptFacts[];
   fallbackEnabled: boolean;
   attemptsUsed: number;

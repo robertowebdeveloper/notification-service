@@ -37,7 +37,7 @@ describe('outbox backlog query', () => {
 
   afterAll(closeOrm);
 
-  async function seed(): Promise<string> {
+  async function seed(): Promise<number> {
     const fixture = await createTenantFixture(orm);
     const result = await notifications.create(notificationInput(fixture));
     if (result.kind !== 'created') throw new Error('expected created');

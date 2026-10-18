@@ -1,5 +1,4 @@
 import type { QueryResult } from '@mikro-orm/core';
-import { randomUUID } from 'node:crypto';
 import type { Channel } from '../../contracts/channels.js';
 import type { NormalizedEventType } from '../../contracts/provider-port.js';
 import type { ApiScope, ReceiptStatus } from '../../contracts/statuses.js';
@@ -24,13 +23,15 @@ import type {
 import {
   bool,
   forkEm,
-  isUuid,
+  isId,
   num,
   parsePgTextArray,
   str,
   strOrNull,
   toDate,
   toDateOrNull,
+  toId,
+  toIdOrNull,
   type Orm,
   type Row,
 } from './sql-support.js';
@@ -49,8 +50,8 @@ export class PgApiKeyRepository implements ApiKeyRepository {
     const row = found[0];
     if (!row) return null;
     return {
-      id: str(row.id),
-      tenantId: str(row.tenant_id),
+      id: toId(row.id),
+      tenantId: toId(row.tenant_id),
       keyHash: str(row.key_hash),
       scopes: parsePgTextArray(row.scopes) as ApiScope[],
       expiresAt: toDateOrNull(row.expires_at),
@@ -59,8 +60,8 @@ export class PgApiKeyRepository implements ApiKeyRepository {
     };
   }
 
-  async touchLastUsed(apiKeyId: string, at: Date): Promise<void> {
-    if (!isUuid(apiKeyId)) return;
+  async touchLastUsed(apiKeyId: number, at: Date): Promise<void> {
+    if (!isId(apiKeyId)) return;
     await forkEm(this.orm).execute<QueryResult>(
       `update api_keys set last_used_at = ?
        where id = ? and (last_used_at is null or last_used_at < ?)`,
@@ -75,8 +76,8 @@ const INSTANCE_COLUMNS = `pi.id, pi.tenant_id, pi.name, pi.provider_type, pi.cha
 
 function toInstance(row: Row): ProviderInstanceRecord {
   return {
-    id: str(row.id),
-    tenantId: str(row.tenant_id),
+    id: toId(row.id),
+    tenantId: toId(row.tenant_id),
     name: str(row.name),
     providerType: str(row.provider_type),
     channel: str(row.channel) as Channel,
@@ -121,8 +122,8 @@ function toLimits(value: unknown): ProviderInstanceLimits {
 export class PgProviderConfigRepository implements ProviderConfigRepository {
   constructor(private readonly orm: Orm) {}
 
-  async findProviderInstance(tenantId: string, id: string): Promise<ProviderInstanceRecord | null> {
-    if (!isUuid(tenantId) || !isUuid(id)) return null;
+  async findProviderInstance(tenantId: number, id: number): Promise<ProviderInstanceRecord | null> {
+    if (!isId(tenantId) || !isId(id)) return null;
     const found = await forkEm(this.orm).execute<Row[]>(
       `select ${INSTANCE_COLUMNS} from provider_instances pi where pi.tenant_id = ? and pi.id = ?`,
       [tenantId, id],
@@ -132,9 +133,9 @@ export class PgProviderConfigRepository implements ProviderConfigRepository {
 
   async findProviderInstanceForWebhook(
     providerType: string,
-    instanceId: string,
+    instanceId: number,
   ): Promise<ProviderInstanceRecord | null> {
-    if (!isUuid(instanceId)) return null;
+    if (!isId(instanceId)) return null;
     const found = await forkEm(this.orm).execute<Row[]>(
       `select ${INSTANCE_COLUMNS} from provider_instances pi
        where pi.id = ? and pi.provider_type = ?`,
@@ -144,12 +145,12 @@ export class PgProviderConfigRepository implements ProviderConfigRepository {
   }
 
   async resolveRoutingPolicy(
-    tenantId: string,
+    tenantId: number,
     routingKey: string,
     channel: Channel,
     platform: string | null,
   ): Promise<RoutingPolicyRecord | null> {
-    if (!isUuid(tenantId)) return null;
+    if (!isId(tenantId)) return null;
     const em = forkEm(this.orm);
     const found = await em.execute<Row[]>(
       `select id, tenant_id, routing_key, channel, platform, version, enabled, max_attempts,
@@ -170,11 +171,11 @@ export class PgProviderConfigRepository implements ProviderConfigRepository {
          on pi.tenant_id = rp.tenant_id and pi.id = rp.provider_instance_id
        where rp.tenant_id = ? and rp.routing_policy_id = ?
        order by rp.position`,
-      [tenantId, str(row.id)],
+      [tenantId, toId(row.id)],
     );
     return {
-      id: str(row.id),
-      tenantId: str(row.tenant_id),
+      id: toId(row.id),
+      tenantId: toId(row.tenant_id),
       routingKey: str(row.routing_key),
       channel: str(row.channel) as Channel,
       platform: strOrNull(row.platform),
@@ -193,15 +194,15 @@ const EVENT_COLUMNS = `id, tenant_id, provider_instance_id, external_event_id, e
 
 function toEvent(row: Row): StoredProviderEvent {
   return {
-    id: str(row.id),
-    tenantId: str(row.tenant_id),
-    providerInstanceId: str(row.provider_instance_id),
+    id: toId(row.id),
+    tenantId: toId(row.tenant_id),
+    providerInstanceId: toId(row.provider_instance_id),
     externalEventId: str(row.external_event_id),
     externalMessageId: strOrNull(row.external_message_id),
     type: str(row.event_type) as NormalizedEventType,
     occurredAt: toDate(row.occurred_at),
     receivedAt: toDate(row.received_at),
-    deliveryId: strOrNull(row.delivery_id),
+    deliveryId: toIdOrNull(row.delivery_id),
     processedAt: toDateOrNull(row.processed_at),
   };
 }
@@ -224,19 +225,18 @@ export class PgProviderEventRepository implements ProviderEventRepository {
     const em = forkEm(this.orm);
     const inserted = await em.execute<Row[]>(
       `insert into provider_events
-         (id, tenant_id, provider_instance_id, external_event_id, external_message_id,
+         (tenant_id, provider_instance_id, external_event_id, external_message_id,
           event_type, occurred_at, received_at, payload, delivery_id)
-       select v.id, v.tenant_id, v.provider_instance_id, v.external_event_id,
+       select v.tenant_id, v.provider_instance_id, v.external_event_id,
               v.external_message_id, v.event_type, v.occurred_at, v.received_at, v.payload,
               ${correlateDelivery('v')}
-       from (select ?::uuid as id, ?::uuid as tenant_id, ?::uuid as provider_instance_id,
+       from (select ?::bigint as tenant_id, ?::bigint as provider_instance_id,
                     ?::text as external_event_id, ?::text as external_message_id,
                     ?::text as event_type, ?::timestamptz as occurred_at,
                     ?::timestamptz as received_at, ?::jsonb as payload) v
        on conflict on constraint provider_events_external_event_unique do nothing
        returning ${EVENT_COLUMNS}`,
       [
-        randomUUID(),
         input.tenantId,
         input.providerInstanceId,
         input.externalEventId,
@@ -313,8 +313,8 @@ export class PgProviderEventRepository implements ProviderEventRepository {
     return result.affectedRows;
   }
 
-  async markProcessed(tenantId: string, eventId: string, at: Date): Promise<boolean> {
-    if (!isUuid(tenantId) || !isUuid(eventId)) return false;
+  async markProcessed(tenantId: number, eventId: number, at: Date): Promise<boolean> {
+    if (!isId(tenantId) || !isId(eventId)) return false;
     const result = await forkEm(this.orm).execute<QueryResult>(
       `update provider_events set processed_at = ?
        where tenant_id = ? and id = ? and processed_at is null`,
@@ -329,12 +329,12 @@ export class PgDeliveryReceiptRepository implements DeliveryReceiptRepository {
   constructor(private readonly orm: Orm) {}
 
   async updateReceiptStatus(
-    tenantId: string,
-    deliveryId: string,
+    tenantId: number,
+    deliveryId: number,
     from: readonly ReceiptStatus[],
     to: ReceiptStatus,
   ): Promise<boolean> {
-    if (!isUuid(tenantId) || !isUuid(deliveryId) || from.length === 0) return false;
+    if (!isId(tenantId) || !isId(deliveryId) || from.length === 0) return false;
     const result = await forkEm(this.orm).execute<QueryResult>(
       `update deliveries set receipt_status = ?, updated_at = now()
        where tenant_id = ? and id = ? and receipt_status = any(?::text[])`,
@@ -348,8 +348,8 @@ export class PgDeliveryReceiptRepository implements DeliveryReceiptRepository {
 export class PgSuppressionRepository implements SuppressionRepository {
   constructor(private readonly orm: Orm) {}
 
-  async isSuppressed(tenantId: string, channel: Channel, recipientKey: string): Promise<boolean> {
-    if (!isUuid(tenantId)) return false;
+  async isSuppressed(tenantId: number, channel: Channel, recipientKey: string): Promise<boolean> {
+    if (!isId(tenantId)) return false;
     const found = await forkEm(this.orm).execute<Row[]>(
       `select 1 from suppressions where tenant_id = ? and channel = ? and recipient_key = ?`,
       [tenantId, channel, recipientKey],
@@ -360,11 +360,10 @@ export class PgSuppressionRepository implements SuppressionRepository {
   async add(input: SuppressionInput): Promise<boolean> {
     const result = await forkEm(this.orm).execute<QueryResult>(
       `insert into suppressions
-         (id, tenant_id, channel, recipient_key, reason, source, provider_event_id)
-       values (?, ?, ?, ?, ?, ?, ?)
+         (tenant_id, channel, recipient_key, reason, source, provider_event_id)
+       values (?, ?, ?, ?, ?, ?)
        on conflict on constraint suppressions_recipient_unique do nothing`,
       [
-        randomUUID(),
         input.tenantId,
         input.channel,
         input.recipientKey,
@@ -384,10 +383,9 @@ export class PgAuditRepository implements AuditRepository {
   async record(event: AuditEventInput): Promise<void> {
     await forkEm(this.orm).execute<QueryResult>(
       `insert into audit_events
-         (id, tenant_id, actor, operation, resource_type, resource_id, details)
-       values (?, ?, ?, ?, ?, ?, ?::jsonb)`,
+         (tenant_id, actor, operation, resource_type, resource_id, details)
+       values (?, ?, ?, ?, ?, ?::jsonb)`,
       [
-        randomUUID(),
         event.tenantId,
         event.actor,
         event.operation,

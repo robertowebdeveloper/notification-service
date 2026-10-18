@@ -31,7 +31,7 @@ describe('scenario 8: provider webhooks', () => {
     return { tenant, instanceId };
   }
 
-  async function post(sys: E2eSystem, instanceId: string, input: ResendEventInput) {
+  async function post(sys: E2eSystem, instanceId: number, input: ResendEventInput) {
     const webhook = signedResendWebhook(sys.webhookSecret, input);
     const response = await sys.api.postWebhook(
       'resend',
@@ -42,9 +42,9 @@ describe('scenario 8: provider webhooks', () => {
     return { webhook, response };
   }
 
-  async function storedEvents(sys: E2eSystem, instanceId: string, eventId: string) {
+  async function storedEvents(sys: E2eSystem, instanceId: number, eventId: string) {
     return sys.db.query<{
-      delivery_id: string | null;
+      delivery_id: number | null;
       processed_at: Date | null;
       event_type: string;
     }>(
@@ -54,7 +54,7 @@ describe('scenario 8: provider webhooks', () => {
     );
   }
 
-  async function waitProcessed(sys: E2eSystem, instanceId: string, eventId: string) {
+  async function waitProcessed(sys: E2eSystem, instanceId: number, eventId: string) {
     return waitFor(
       async () => {
         const [event] = await storedEvents(sys, instanceId, eventId);
@@ -68,7 +68,7 @@ describe('scenario 8: provider webhooks', () => {
     );
   }
 
-  async function waitReceipt(sys: E2eSystem, tenant: SeededTenant, id: string, receipt: string) {
+  async function waitReceipt(sys: E2eSystem, tenant: SeededTenant, id: number, receipt: string) {
     return waitFor(
       async () => {
         const view = await sys.view(tenant, id);
@@ -206,7 +206,7 @@ describe('scenario 8: provider webhooks', () => {
       });
       const unknown = await sys.api.postWebhook(
         'resend',
-        '00000000-0000-4000-8000-000000000000',
+        Number.MAX_SAFE_INTEGER,
         valid.rawBody,
         valid.headers,
       );

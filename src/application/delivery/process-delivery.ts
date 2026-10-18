@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import type { Channel, PayloadByChannel } from '../../contracts/channels.js';
 import type { DeliveryJobData } from '../../contracts/jobs.js';
 import type { SendResult } from '../../contracts/provider-port.js';
@@ -248,6 +247,7 @@ export class ProcessDelivery {
         const key = deriveProviderIdempotencyKey({
           tenantId: claim.tenantId,
           deliveryId: claim.deliveryId,
+          deliveryCreatedAt: claim.createdAt,
           providerInstanceId: candidate.provider.record.id,
           operationAttemptNumber: claim.attemptsUsed + 1,
         });
@@ -368,7 +368,7 @@ export class ProcessDelivery {
     provider: SelectedProvider,
     idempotencyKey: string,
   ): Promise<
-    { kind: 'started'; attemptId: string } | { kind: 'not_sent'; outcome: ProcessOutcome }
+    { kind: 'started'; attemptId: number } | { kind: 'not_sent'; outcome: ProcessOutcome }
   > {
     const instanceId = provider.record.id;
     let quota;
@@ -397,15 +397,13 @@ export class ProcessDelivery {
       };
     }
 
-    const attemptId = randomUUID();
-    const started = await this.deps.deliveries.startAttempt(claim, {
-      attemptId,
+    const attemptId = await this.deps.deliveries.startAttempt(claim, {
       attemptNumber: claim.attemptsUsed + 1,
       providerInstanceId: instanceId,
       providerInstanceRevision: provider.record.revision,
       providerIdempotencyKey: idempotencyKey,
     });
-    if (!started) {
+    if (attemptId === null) {
       this.deps.logger.warn({ deliveryId: claim.deliveryId }, 'attempt start fenced out');
       return { kind: 'not_sent', outcome: 'fenced' };
     }
@@ -419,7 +417,7 @@ export class ProcessDelivery {
     idempotencyKey: string,
     replay: boolean,
     lease: LeaseKeeper,
-    attemptId: string,
+    attemptId: number,
   ): Promise<ProcessOutcome> {
     const instanceId = provider.record.id;
     const attemptNumber = claim.attemptsUsed + 1;
@@ -512,7 +510,7 @@ export class ProcessDelivery {
    */
   private async recordResolution(
     claim: ClaimedDelivery,
-    attemptId: string,
+    attemptId: number,
     resolution: AttemptResolution,
     lease: LeaseKeeper,
   ): Promise<boolean> {
@@ -558,7 +556,7 @@ export class ProcessDelivery {
 
   private async alreadyRecorded(
     claim: ClaimedDelivery,
-    attemptId: string,
+    attemptId: number,
     resolution: AttemptResolution,
   ): Promise<boolean> {
     try {
@@ -592,7 +590,7 @@ export class ProcessDelivery {
   private async callProvider(
     claim: ClaimedDelivery,
     provider: SelectedProvider,
-    attemptId: string,
+    attemptId: number,
     idempotencyKey: string,
     lease: LeaseKeeper,
   ): Promise<SendResult> {
@@ -611,6 +609,7 @@ export class ProcessDelivery {
     try {
       return await provider.adapter.send(body, {
         deliveryId: claim.deliveryId,
+        createdAt: claim.createdAt,
         attemptId,
         instance: provider.instance,
         idempotencyKey,

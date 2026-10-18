@@ -34,8 +34,8 @@ function instance(
 ): ResolvedProviderInstance<ResendConfig> {
   instanceCounter += 1;
   return {
-    id: `resend-instance-${instanceCounter}`,
-    tenantId: 'tenant-1',
+    id: instanceCounter,
+    tenantId: 1,
     providerType: 'resend',
     revision: 1,
     config,
@@ -106,7 +106,10 @@ describe('Resend adapter', () => {
     it('sends the API key and the idempotency key, reusing it on replays', async () => {
       const context = sendContext(instance(localConfig(server.baseUrl)));
       const first = await adapter.send(emailPayload('accept'), context);
-      const replay = await adapter.send(emailPayload('accept'), { ...context, attemptId: 'retry' });
+      const replay = await adapter.send(emailPayload('accept'), {
+        ...context,
+        attemptId: context.attemptId + 1,
+      });
 
       expect(first).toEqual({
         outcome: 'accepted',

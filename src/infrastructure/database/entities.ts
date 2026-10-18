@@ -5,15 +5,16 @@ import type { RoutingSnapshot } from '../../application/ports/repositories.js';
 
 /**
  * MikroORM entity schemas (no decorators). They mirror the hand-written SQL in
- * migrations/ column by column. Relations are modelled as scalar uuid columns: the
+ * migrations/ column by column. Relations are modelled as scalar bigint columns: the
  * composite (tenant_id, x_id) foreign keys live only in the SQL migration because
  * MikroORM metadata cannot express a foreign key to a non-primary unique key.
  * See tests/integration/database/schema.test.ts for the metadata/schema check.
  */
 
 const ts = () => p.datetime().columnType('timestamptz(3)');
-const uuid = () => p.uuid();
-const pk = () => p.uuid().primary().defaultRaw('gen_random_uuid()');
+const id = () => p.bigint('number');
+// `generated always as identity` in SQL: ids are assigned by PostgreSQL only.
+const pk = () => p.bigint('number').primary().autoincrement().generated('identity');
 const CHANNEL_CHECK = `channel in ('email', 'sms', 'push', 'messaging')`;
 const PLATFORM_CHECK = `(channel in ('email', 'sms') and platform is null) or (channel = 'push' and platform in ('fcm', 'apns')) or (channel = 'messaging' and platform in ('whatsapp', 'telegram'))`;
 const LEASE_CHECK = '(lease_token is null) = (lease_expires_at is null)';
@@ -50,7 +51,7 @@ export const ApiKeySchema = defineEntity({
   ],
   properties: {
     id: pk(),
-    tenantId: uuid(),
+    tenantId: id(),
     name: p.text(),
     keyPrefix: p.text(),
     keyHash: p.text(),
@@ -76,7 +77,7 @@ export const ProviderInstanceSchema = defineEntity({
   ],
   properties: {
     id: pk(),
-    tenantId: uuid(),
+    tenantId: id(),
     name: p.text(),
     providerType: p.text(),
     channel: p.text(),
@@ -111,7 +112,7 @@ export const RoutingPolicySchema = defineEntity({
   ],
   properties: {
     id: pk(),
-    tenantId: uuid(),
+    tenantId: id(),
     routingKey: p.text(),
     channel: p.text(),
     platform: p.text().nullable(),
@@ -135,10 +136,10 @@ export const RoutingPolicyProviderSchema = defineEntity({
   ],
   checks: [{ name: 'routing_policy_providers_position_check', expression: 'position >= 0' }],
   properties: {
-    routingPolicyId: uuid().primary(),
+    routingPolicyId: id().primary(),
     position: p.integer().primary(),
-    tenantId: uuid(),
-    providerInstanceId: uuid(),
+    tenantId: id(),
+    providerInstanceId: id(),
   },
 });
 
@@ -158,12 +159,12 @@ export const NotificationSchema = defineEntity({
   checks: [{ name: 'notifications_channel_check', expression: CHANNEL_CHECK }],
   properties: {
     id: pk(),
-    tenantId: uuid(),
+    tenantId: id(),
     idempotencyKey: p.text(),
     requestHash: p.text(),
     channel: p.text(),
     routingKey: p.text(),
-    routingPolicyId: uuid(),
+    routingPolicyId: id(),
     payload: jsonb<Record<string, unknown>>(),
     metadata: jsonb<Record<string, unknown>>().defaultRaw(`'{}'::jsonb`),
     routingSnapshot: jsonb<RoutingSnapshot>(),
@@ -200,8 +201,8 @@ export const DeliverySchema = defineEntity({
   ],
   properties: {
     id: pk(),
-    tenantId: uuid(),
-    notificationId: uuid(),
+    tenantId: id(),
+    notificationId: id(),
     channel: p.text(),
     recipient: p.text(),
     submissionStatus: p.text().default('pending'),
@@ -211,7 +212,7 @@ export const DeliverySchema = defineEntity({
     maxAttempts: p.integer(),
     nextAttemptAt: ts().nullable(),
     expiresAt: ts(),
-    leaseToken: uuid().nullable(),
+    leaseToken: p.uuid().nullable(),
     leaseExpiresAt: ts().nullable(),
     version: p.integer().default(0),
     lastErrorCode: p.text().nullable(),
@@ -248,11 +249,11 @@ export const DeliveryAttemptSchema = defineEntity({
   ],
   properties: {
     id: pk(),
-    tenantId: uuid(),
-    deliveryId: uuid(),
+    tenantId: id(),
+    deliveryId: id(),
     attemptNumber: p.integer(),
     generation: p.integer(),
-    providerInstanceId: uuid(),
+    providerInstanceId: id(),
     providerInstanceRevision: p.integer(),
     providerIdempotencyKey: p.text(),
     outcome: p.text().default('started'),
@@ -292,13 +293,13 @@ export const OutboxEventSchema = defineEntity({
   ],
   properties: {
     id: pk(),
-    tenantId: uuid(),
-    deliveryId: uuid(),
+    tenantId: id(),
+    deliveryId: id(),
     generation: p.integer(),
     eventType: p.text(),
     status: p.text().default('pending'),
     availableAt: ts().defaultRaw('now()'),
-    leaseToken: uuid().nullable(),
+    leaseToken: p.uuid().nullable(),
     leaseExpiresAt: ts().nullable(),
     dispatchCount: p.integer().default(0),
     publishedAt: ts().nullable(),
@@ -338,14 +339,14 @@ export const ProviderEventSchema = defineEntity({
   ],
   properties: {
     id: pk(),
-    tenantId: uuid(),
-    providerInstanceId: uuid(),
+    tenantId: id(),
+    providerInstanceId: id(),
     externalEventId: p.text(),
     externalMessageId: p.text().nullable(),
     eventType: p.text(),
     occurredAt: ts(),
     receivedAt: ts().defaultRaw('now()'),
-    deliveryId: uuid().nullable(),
+    deliveryId: id().nullable(),
     processedAt: ts().nullable(),
     payload: jsonb<Record<string, unknown>>().defaultRaw(`'{}'::jsonb`),
   },
@@ -370,12 +371,12 @@ export const SuppressionSchema = defineEntity({
   ],
   properties: {
     id: pk(),
-    tenantId: uuid(),
+    tenantId: id(),
     channel: p.text(),
     recipientKey: p.text(),
     reason: p.text(),
     source: p.text(),
-    providerEventId: uuid().nullable(),
+    providerEventId: id().nullable(),
     createdAt: ts().defaultRaw('now()'),
   },
 });
@@ -388,7 +389,7 @@ export const AuditEventSchema = defineEntity({
   ],
   properties: {
     id: pk(),
-    tenantId: uuid().nullable(),
+    tenantId: id().nullable(),
     actor: p.text(),
     operation: p.text(),
     resourceType: p.text(),

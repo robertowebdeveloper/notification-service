@@ -12,7 +12,7 @@ import {
   parseAllowedHosts,
   type ProviderDeploymentPolicy,
 } from '../infrastructure/providers/deployment-policy.js';
-import type { AppConfig } from './env.js';
+import { isRemoteEnvironment, type AppConfig } from './env.js';
 
 /**
  * Maps the validated environment to the option objects of the use cases and adapters, so the
@@ -66,6 +66,8 @@ export interface HttpServerSettings {
   requestTimeoutMs: number;
   handlerTimeoutMs: number;
   trustProxy: boolean | number | string;
+  /** Serve the Swagger UI (the OpenAPI document is always served). */
+  docs: boolean;
 }
 
 export function httpServerSettingsOf(config: AppConfig): HttpServerSettings {
@@ -79,6 +81,7 @@ export function httpServerSettingsOf(config: AppConfig): HttpServerSettings {
     requestTimeoutMs: config.HTTP_REQUEST_TIMEOUT_MS,
     handlerTimeoutMs: config.HTTP_HANDLER_TIMEOUT_MS,
     trustProxy,
+    docs: config.API_DOCS_ENABLED ?? !isRemoteEnvironment(config.APP_ENV),
   };
 }
 

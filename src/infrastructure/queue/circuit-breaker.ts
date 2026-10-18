@@ -154,11 +154,11 @@ export class ValkeyCircuitBreaker implements ProviderCircuitBreaker {
     this.timeoutMs = options.commandTimeoutMs ?? 2_000;
   }
 
-  private key(id: string): string {
+  private key(id: number): string {
     return `${this.prefix}:{${id}}`;
   }
 
-  async acquire(providerInstanceId: string): Promise<BreakerPermit> {
+  async acquire(providerInstanceId: number): Promise<BreakerPermit> {
     const token = randomUUID();
     const [allowed, probe, wait] = await withTimeout(
       this.redis.nsBreakerAcquire(this.key(providerInstanceId), this.probeTtlMs, token),
@@ -171,7 +171,7 @@ export class ValkeyCircuitBreaker implements ProviderCircuitBreaker {
       : { allowed: true, probe: false };
   }
 
-  async recordSuccess(providerInstanceId: string, probeToken?: string): Promise<void> {
+  async recordSuccess(providerInstanceId: number, probeToken?: string): Promise<void> {
     await withTimeout(
       this.redis.nsBreakerSuccess(this.key(providerInstanceId), probeToken ?? ''),
       this.timeoutMs,
@@ -179,7 +179,7 @@ export class ValkeyCircuitBreaker implements ProviderCircuitBreaker {
     );
   }
 
-  async releaseProbe(providerInstanceId: string, probeToken: string): Promise<void> {
+  async releaseProbe(providerInstanceId: number, probeToken: string): Promise<void> {
     await withTimeout(
       this.redis.nsBreakerReleaseProbe(this.key(providerInstanceId), probeToken),
       this.timeoutMs,
@@ -188,7 +188,7 @@ export class ValkeyCircuitBreaker implements ProviderCircuitBreaker {
   }
 
   async recordFailure(
-    providerInstanceId: string,
+    providerInstanceId: number,
     settings?: CircuitBreakerSettings,
   ): Promise<void> {
     await withTimeout(
@@ -203,7 +203,7 @@ export class ValkeyCircuitBreaker implements ProviderCircuitBreaker {
     );
   }
 
-  async forceOpen(providerInstanceId: string, durationMs: number): Promise<void> {
+  async forceOpen(providerInstanceId: number, durationMs: number): Promise<void> {
     await withTimeout(
       this.redis.nsBreakerForceOpen(this.key(providerInstanceId), durationMs),
       this.timeoutMs,

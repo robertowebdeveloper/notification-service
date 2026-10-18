@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@fastify/swagger": "9.9.2",
+    "@fastify/swagger-ui": "6.1.2",
     "@fastify/type-provider-typebox": "6.3.0",
     "@mikro-orm/core": "7.2.5",
     "@mikro-orm/migrations": "7.2.5",
