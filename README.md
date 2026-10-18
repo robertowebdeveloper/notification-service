@@ -67,6 +67,8 @@ Richiedono `docker compose up -d postgres valkey mailpit`; poi `npm run test:e2e
 
 ## Ambienti Docker
 
+Comandi abbreviati: `make help` (Makefile: `up`, `down`, `logs s=api`, `migrate`, `config-apply`, `psql`, `clean`, `prod-*` con `ENV_FILE=...`).
+
 **Sviluppo locale** — `compose.yaml` + `compose.override.yaml` (caricato automaticamente) avviano `migrate`, `api`, `dispatcher`, `worker-email`, più PostgreSQL 18, Valkey (AOF, `noeviction`) e Mailpit. Tutte le porte pubblicate (API inclusa) sono legate a `127.0.0.1`:
 
 ```sh
