@@ -1,0 +1,56 @@
+{
+  "tenants": [
+    {
+      "slug": "e2e-example",
+      "name": "E2E example tenant",
+      "status": "active",
+      "allowedSenders": ["@example.test"],
+      "quotas": {},
+      "apiKeys": [
+        {
+          "name": "e2e-primary",
+          "scopes": ["notifications:write", "notifications:read", "notifications:retry"]
+        }
+      ],
+      "providerInstances": [
+        {
+          "name": "mailpit",
+          "providerType": "smtp",
+          "channel": "email",
+          "platform": null,
+          "config": {
+            "host": "localhost",
+            "port": 1025,
+            "secure": false,
+            "requireTLS": false,
+            "tlsRequired": false,
+            "profile": "local"
+          },
+          "secretRef": null,
+          "enabled": true
+        },
+        {
+          "name": "fake-resend",
+          "providerType": "resend",
+          "channel": "email",
+          "platform": null,
+          "config": { "baseUrl": "http://127.0.0.1:4010", "profile": "local" },
+          "secretRef": "env:E2E_RESEND",
+          "enabled": true
+        }
+      ],
+      "routingPolicies": [
+        {
+          "routingKey": "transactional",
+          "channel": "email",
+          "platform": null,
+          "enabled": true,
+          "maxAttempts": 5,
+          "ttlSeconds": 86400,
+          "fallbackEnabled": true,
+          "providers": ["mailpit", "fake-resend"]
+        }
+      ]
+    }
+  ]
+}

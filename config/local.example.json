@@ -1,0 +1,56 @@
+{
+  "tenants": [
+    {
+      "slug": "local-app",
+      "name": "Local application",
+      "status": "active",
+      "allowedSenders": ["no-reply@example.test", "@notifications.example.test"],
+      "apiKeys": [
+        {
+          "name": "local-app-key",
+          "scopes": ["notifications:write", "notifications:read", "notifications:retry"]
+        }
+      ],
+      "providerInstances": [
+        {
+          "name": "mailpit",
+          "providerType": "smtp",
+          "channel": "email",
+          "config": {
+            "host": "mailpit",
+            "port": 1025,
+            "secure": false,
+            "requireTLS": false,
+            "tlsRequired": false,
+            "profile": "local"
+          },
+          "secretRef": null,
+          "enabled": true,
+          "sendRateLimit": { "burst": 20, "perSecond": 10 },
+          "circuitBreaker": { "failureThreshold": 5, "failureWindowMs": 30000, "openMs": 30000 }
+        },
+        {
+          "name": "resend-placeholder",
+          "providerType": "resend",
+          "channel": "email",
+          "config": {
+            "baseUrl": "http://resend-placeholder.invalid",
+            "profile": "local"
+          },
+          "secretRef": "env:RESEND_PLACEHOLDER",
+          "enabled": false
+        }
+      ],
+      "routingPolicies": [
+        {
+          "routingKey": "transactional",
+          "channel": "email",
+          "maxAttempts": 5,
+          "ttlSeconds": 86400,
+          "fallbackEnabled": false,
+          "providers": ["mailpit"]
+        }
+      ]
+    }
+  ]
+}

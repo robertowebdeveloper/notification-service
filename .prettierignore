@@ -1,0 +1,6 @@
+dist/
+coverage/
+package-lock.json
+.promptops/
+.promptops-assets/
+src/infrastructure/database/migrations/.snapshot-*.json

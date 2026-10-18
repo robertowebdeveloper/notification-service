@@ -1,0 +1,21 @@
+# Only package*.json, tsconfig*.json and src/ are copied by docker/Dockerfile; keep the build
+# context small and free of local state, secrets and development files.
+node_modules
+dist
+coverage
+.git
+.github
+.claude
+.promptops
+.promptops-assets
+.env
+.env.*
+docker/secrets
+tests
+docs
+scripts
+config
+*.md
+compose*.yaml
+*.log
+.DS_Store
