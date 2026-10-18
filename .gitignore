@@ -17,5 +17,5 @@ docker/secrets/*
 !docker/secrets/.gitkeep
 
 # Local Claude Code settings
-.claude/settings.local.json
+.claude/
 .DS_Store
